@@ -6,6 +6,57 @@ RTC_DATA_ATTR uint8_t digiCount = 0;
 
 extern Configuration config;
 
+// ---- Duplicate suppression (as Dire Wolf DEDUPE): same src, dst and info
+// repeated within DIGI_DEDUPE_MS is not repeated again. Path is ignored.
+#define DIGI_DEDUPE_MS 30000UL
+#define DIGI_DEDUPE_N 32
+static struct
+{
+    uint32_t hash;
+    uint32_t t;
+} digiDedupe[DIGI_DEDUPE_N];
+static uint8_t digiDedupeIdx = 0;
+
+static uint32_t fnv1a(uint32_t h, const uint8_t *p, size_t n)
+{
+    while (n--)
+    {
+        h ^= *p++;
+        h *= 16777619UL;
+    }
+    return h;
+}
+
+static uint32_t digiPktHash(const AX25Msg &Packet)
+{
+    uint32_t h = 2166136261UL;
+    h = fnv1a(h, (const uint8_t *)Packet.src.call, strnlen(Packet.src.call, sizeof(Packet.src.call)));
+    h = fnv1a(h, &Packet.src.ssid, 1);
+    h = fnv1a(h, (const uint8_t *)Packet.dst.call, strnlen(Packet.dst.call, sizeof(Packet.dst.call)));
+    h = fnv1a(h, &Packet.dst.ssid, 1);
+    size_t n = Packet.len;
+    if (n > sizeof(Packet.info))
+        n = sizeof(Packet.info);
+    return fnv1a(h, Packet.info, n);
+}
+
+bool digiDupeSeen(const AX25Msg &Packet)
+{
+    uint32_t h = digiPktHash(Packet), now = millis();
+    for (int i = 0; i < DIGI_DEDUPE_N; i++)
+        if (digiDedupe[i].t != 0 && digiDedupe[i].hash == h && (uint32_t)(now - digiDedupe[i].t) < DIGI_DEDUPE_MS)
+            return true;
+    return false;
+}
+
+void digiDupeRemember(const AX25Msg &Packet)
+{
+    uint32_t now = millis();
+    digiDedupe[digiDedupeIdx].hash = digiPktHash(Packet);
+    digiDedupe[digiDedupeIdx].t = now ? now : 1;
+    digiDedupeIdx = (digiDedupeIdx + 1) % DIGI_DEDUPE_N;
+}
+
 // "WIDEn" with n = 1..7 -> n, anything else -> 0
 static int wideN(const char *call)
 {

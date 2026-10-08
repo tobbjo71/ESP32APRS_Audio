@@ -2835,13 +2835,15 @@ bool pkgTxDuplicate(AX25Msg ax25)
                 sprintf(callsign, "%s-%d", ax25.src.call, ax25.src.ssid);
             else
                 sprintf(callsign, "%s", ax25.src.call);
-            if (strncmp(&txQueue[i].Info[0], callsign, strlen(callsign)) >= 0) // Check duplicate src callsign
+            size_t cl = strlen(callsign);
+            if (strncmp(&txQueue[i].Info[0], callsign, cl) == 0 && txQueue[i].Info[cl] == '>') // Same src callsign
             {
                 char *ecs1 = strstr(txQueue[i].Info, ":");
                 if (ecs1 == NULL)
                     continue;
-                ;
-                if (strncmp(ecs1, (const char *)ax25.info, strlen(ecs1)) >= 0)
+                ecs1++; // info field starts after ':'
+                size_t il = strlen(ecs1);
+                if (il == ax25.len && strncmp(ecs1, (const char *)ax25.info, il) == 0)
                 { // Check duplicate aprs info
                     txQueue[i].Active = false;
                     psramUnlock();
@@ -7780,7 +7782,17 @@ void taskAPRS(void *pvParameters)
                 {
                     // Packet recheck
                     pkgTxDuplicate(incomingPacket); // Search duplicate in tx and drop packet for renew
-                    int dlyFlag = digiProcess(incomingPacket);
+                    int dlyFlag = 0;
+                    if (digiDupeSeen(incomingPacket))
+                    {
+                        log_d("Digi: duplicate within 30 s, not repeated");
+                    }
+                    else
+                    {
+                        dlyFlag = digiProcess(incomingPacket);
+                        if (dlyFlag > 0)
+                            digiDupeRemember(incomingPacket);
+                    }
                     log_d("Digi Process Flag=%d\n", dlyFlag);
                     if (dlyFlag > 0)
                     {
