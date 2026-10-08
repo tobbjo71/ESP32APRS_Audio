@@ -7867,6 +7867,8 @@ void handle_digi(AsyncWebServerRequest *request)
 	bool pos2RF = false;
 	bool pos2INET = false;
 	bool timeStamp = false;
+	bool digiFillin = false;
+	bool digiLegacy = false;
 
 	if (request->hasArg("commitDIGI"))
 	{
@@ -7915,6 +7917,25 @@ void handle_digi(AsyncWebServerRequest *request)
 				{
 					if (isValidNumber(request->arg(i)))
 						config.digi_delay = request->arg(i).toInt();
+				}
+			}
+			if (request->argName(i) == "digiFillin")
+			{
+				if (strcmp(request->arg(i).c_str(), "OK") == 0)
+					digiFillin = true;
+			}
+			if (request->argName(i) == "digiLegacy")
+			{
+				if (strcmp(request->arg(i).c_str(), "OK") == 0)
+					digiLegacy = true;
+			}
+			if (request->argName(i) == "digiMaxHop")
+			{
+				if (isValidNumber(request->arg(i)))
+				{
+					int mh = request->arg(i).toInt();
+					if (mh >= 1 && mh <= 7)
+						config.digi_maxhop = mh;
 				}
 			}
 			if (request->argName(i) == "digiPosInv")
@@ -8230,6 +8251,8 @@ void handle_digi(AsyncWebServerRequest *request)
 		config.digi_loc2rf = pos2RF;
 		config.digi_loc2inet = pos2INET;
 		config.digi_timestamp = timeStamp;
+		config.digi_fillin = digiFillin;
+		config.digi_legacy = digiLegacy;
 
 		initInterval = true;
 		saveConfig(request);
@@ -8237,7 +8260,7 @@ void handle_digi(AsyncWebServerRequest *request)
 	else
 	{
 		// Allocate initial memory for HTML content
-		char *html = allocateStringMemory(20000); // Start with 12KB buffer
+		char *html = allocateStringMemory(24000); // measured ~20.7 kB with New-N rows, 19.8 kB before
 		if (!html)
 		{
 			request->send(500, "text/html", "Memory allocation failed");
@@ -8392,6 +8415,13 @@ void handle_digi(AsyncWebServerRequest *request)
 		strcat(html, "</tr>\n");
 
 		snprintf(tempHtml, sizeof(tempHtml), "<tr><td style=\"text-align: right;\"><b>Repeat Delay:</b></td><td style=\"text-align: left;\"><input min=\"0\" max=\"10000\" step=\"100\" id=\"digiDelay\" name=\"digiDelay\" type=\"number\" value=\"%d\" /> mSec. <i>*0 is auto,Other random of delay time</i></td></tr>", config.digi_delay);
+		strcat(html, tempHtml);
+
+		snprintf(tempHtml, sizeof(tempHtml), "<tr><td style=\"text-align: right;\"><b>Fill-in only:</b></td><td style=\"text-align: left;\"><label class=\"switch\"><input type=\"checkbox\" name=\"digiFillin\" value=\"OK\" %s><span class=\"slider round\"></span></label> <i>Repeat WIDE1-1 only (New-N fill-in digi)</i></td></tr>\n", config.digi_fillin ? "checked" : "");
+		strcat(html, tempHtml);
+		snprintf(tempHtml, sizeof(tempHtml), "<tr><td style=\"text-align: right;\"><b>Max WIDEn-N:</b></td><td style=\"text-align: left;\"><input min=\"1\" max=\"7\" step=\"1\" name=\"digiMaxHop\" type=\"number\" value=\"%d\" /> <i>WIDEn-N with n above this is trapped: repeated once, then terminated</i></td></tr>\n", config.digi_maxhop);
+		strcat(html, tempHtml);
+		snprintf(tempHtml, sizeof(tempHtml), "<tr><td style=\"text-align: right;\"><b>Legacy alias:</b></td><td style=\"text-align: left;\"><label class=\"switch\"><input type=\"checkbox\" name=\"digiLegacy\" value=\"OK\" %s><span class=\"slider round\"></span></label> <i>Also repeat obsolete RELAY, WIDE, TRACE, TRACEn-N, GATE, ECHO</i></td></tr>\n", config.digi_legacy ? "checked" : "");
 		strcat(html, tempHtml);
 
 		strcat(html, "<tr>\n");

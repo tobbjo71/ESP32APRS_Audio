@@ -1780,6 +1780,9 @@ void defaultConfig()
     config.digi_interval = 600;
     config.igate_timestamp = false;
     config.digi_delay = 0;
+    config.digi_fillin = false;
+    config.digi_maxhop = 2;
+    config.digi_legacy = false;
     config.digiFilter = FILTER_OBJECT | FILTER_ITEM | FILTER_MESSAGE | FILTER_MICE | FILTER_POSITION | FILTER_WX;
 
     sprintf(config.digi_symbol, "A#");

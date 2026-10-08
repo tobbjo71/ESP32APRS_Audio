@@ -169,6 +169,9 @@ typedef struct Config_Struct
 	uint8_t digi_path;
 	uint16_t digi_delay; // ms
 	uint16_t digiFilter;
+	bool digi_fillin;     // true = fill-in digi: only WIDE1-1 (New-N paradigm)
+	uint8_t digi_maxhop;  // WIDEn-N with n above this is trapped (repeated once, terminated). 1..7
+	bool digi_legacy;     // also handle obsolete aliases RELAY, WIDE, TRACE, TRACEn-N, GATE, ECHO
 	//--Position
 	bool digi_bcn;
 	//bool digi_compress = false;

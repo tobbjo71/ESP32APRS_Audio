@@ -165,6 +165,9 @@ bool saveConfiguration(const char *filename, const Configuration &config)
     doc["digiPath"] = config.digi_path;
     doc["digiDelay"] = config.digi_delay;
     doc["digiFilter"] = config.digiFilter;
+    doc["digiFillin"] = config.digi_fillin;
+    doc["digiMaxHop"] = config.digi_maxhop;
+    doc["digiLegacy"] = config.digi_legacy;
     doc["digiBcn"] = config.digi_bcn;
     doc["digiAlt"] = config.digi_alt;
     doc["digiGPS"] = config.digi_gps;
@@ -707,6 +710,11 @@ bool loadConfiguration(const char *filename, Configuration &config)
         config.digi_path = doc["digiPath"];
         config.digi_delay = doc["digiDelay"];
         config.digiFilter = doc["digiFilter"];
+        config.digi_fillin = doc["digiFillin"] | false;
+        config.digi_maxhop = doc["digiMaxHop"] | 2;
+        if (config.digi_maxhop < 1 || config.digi_maxhop > 7)
+            config.digi_maxhop = 2;
+        config.digi_legacy = doc["digiLegacy"] | false;
         config.digi_bcn = doc["digiBcn"];
         config.digi_alt = doc["digiAlt"];
         config.digi_gps = doc["digiGPS"];
