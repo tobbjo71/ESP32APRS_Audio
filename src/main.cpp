@@ -2914,6 +2914,75 @@ bool pkgTxPush(const char *info, size_t len, int dly, uint8_t Ch)
     return true;
 }
 
+#ifdef BLUETOOTH
+extern AX25Ctx AX25;
+// Own transmitted packets to Bluetooth, so a connected client (APRSdroid,
+// display unit) also gets this station's own position and messages.
+static bool isOwnSrc(const char *tnc2)
+{
+    const char *gt = strchr(tnc2, '>');
+    if (gt == NULL)
+        return false;
+    size_t n = gt - tnc2;
+    char c[12];
+    const struct
+    {
+        const char *call;
+        uint8_t ssid;
+    } own[] = {{config.trk_mycall, config.trk_ssid}, {config.digi_mycall, config.digi_ssid}, {config.aprs_mycall, config.aprs_ssid}};
+    for (unsigned i = 0; i < sizeof(own) / sizeof(own[0]); i++)
+    {
+        if (own[i].ssid > 0)
+            snprintf(c, sizeof(c), "%s-%d", own[i].call, own[i].ssid);
+        else
+            snprintf(c, sizeof(c), "%s", own[i].call);
+        if (strlen(c) == n && strncmp(tnc2, c, n) == 0)
+            return true;
+    }
+    return false;
+}
+
+static void btWrite(const uint8_t *b, size_t n)
+{
+#if !defined(CONFIG_IDF_TARGET_ESP32) || defined(CONFIG_IDF_TARGET_ESP32C6)
+    if (NuSerial.isConnected())
+        NuSerial.write(b, n);
+#else
+    if (SerialBT.hasClient())
+        SerialBT.write(b, n);
+#endif
+}
+
+static void btSendOwnTx(const char *tnc2, size_t len)
+{
+    if (!config.bt_master || !isOwnSrc(tnc2))
+        return;
+    if (config.bt_mode == 1)
+    { // TNC2 line
+        btWrite((const uint8_t *)tnc2, len);
+        btWrite((const uint8_t *)"\r\n", 2);
+    }
+    else if (config.bt_mode == 2)
+    { // KISS: AX.25 frame without FCS
+        static ax25frame frame;
+        static uint8_t raw[300];
+        static uint8_t pkg[2 * 300 + 3];
+        static char txt[300];
+        if (len >= sizeof(txt))
+            return;
+        memcpy(txt, tnc2, len);
+        txt[len] = 0;
+        memset(&frame, 0, sizeof(frame));
+        if (!ax25_encode(frame, txt, len))
+            return;
+        int n = hdlcFrame(raw, sizeof(raw), &AX25, &frame);
+        if (n <= 0)
+            return;
+        btWrite(pkg, kiss_wrapper(pkg, raw, n));
+    }
+}
+#endif
+
 bool pkgTxSend()
 {
 //   if (getReceive())
@@ -2978,6 +3047,9 @@ bool pkgTxSend()
                     APRS_setPreamble(config.preamble * 100); // Send packet to RF
                     APRS_sendTNC2Pkt((uint8_t *)txQueue[i].Info, txQueue[i].length);
                     igateTLM.TX++;
+#ifdef BLUETOOTH
+                    btSendOwnTx(txQueue[i].Info, txQueue[i].length);
+#endif
                 
                     // free(info);
                     //  for (int i = 0; i < 100; i++)
@@ -3483,6 +3555,17 @@ void bluetooth_init()
         }
         NuSerial.begin_uuid(config.bt_uuid, config.bt_uuid_tx, config.bt_uuid_rx, 115200);
 #else
+        // Classic ESP32: Bluetooth SPP server (slave), e.g. for APRSdroid or a display unit
+        if (config.bt_pin > 0)
+        {
+            char pin[12];
+            snprintf(pin, sizeof(pin), "%lu", (unsigned long)config.bt_pin);
+            SerialBT.setPin(pin, strlen(pin));
+        }
+        if (SerialBT.begin(String(config.bt_name)))
+            log_d("Bluetooth SPP started as %s", config.bt_name);
+        else
+            log_d("Bluetooth SPP start failed");
 #endif
     }
 }
@@ -7183,10 +7266,12 @@ void taskAPRS(void *pvParameters)
                             memcpy(rawP, tnc2.c_str(), tnc2.length());
 #if defined(CONFIG_IDF_TARGET_ESP32)
                             SerialBT.write((uint8_t *)rawP, tnc2.length());
+                            SerialBT.write((const uint8_t *)"\r\n", 2);
 #else
                             if (NuSerial.isConnected())
                             {
                                 NuSerial.write((uint8_t *)rawP, tnc2.length());
+                                NuSerial.write((const uint8_t *)"\r\n", 2);
                             }
 #endif
                             free(rawP);
