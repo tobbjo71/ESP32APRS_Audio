@@ -462,10 +462,11 @@ bool saveConfiguration(const char *filename, const Configuration &config)
         doc["btSlave"] = config.bt_slave;
         doc["btMaster"] = config.bt_master;
         doc["btMode"] = config.bt_mode;
+        doc["btRx2RF"] = config.bt_rx2rf;
         doc["btPower"] = config.bt_power;
         doc["btPin"] = config.bt_pin;
         doc["btName"] = config.bt_name;
-#if !defined(CONFIG_IDF_TARGET_ESP32)
+#if BT_USE_BLE
         // Bluetooth BLE
         doc["btUUID"] = config.bt_uuid;
         doc["btUUIDRx"] = config.bt_uuid_rx;
@@ -983,10 +984,11 @@ bool loadConfiguration(const char *filename, Configuration &config)
         config.bt_slave = doc["btSlave"];
         config.bt_master = doc["btMaster"];
         config.bt_mode = doc["btMode"];
+        config.bt_rx2rf = doc["btRx2RF"] | false;
         config.bt_power = doc["btPower"];
         config.bt_pin = doc["btPin"];
         strlcpy(config.bt_name, doc["btName"] | "", sizeof(config.bt_name));
-#if !defined(CONFIG_IDF_TARGET_ESP32)
+#if BT_USE_BLE
         // Bluetooth BLE
         strlcpy(config.bt_uuid, doc["btUUID"] | "", sizeof(config.bt_uuid));
         strlcpy(config.bt_uuid_rx, doc["btUUIDRx"] | "", sizeof(config.bt_uuid_rx));

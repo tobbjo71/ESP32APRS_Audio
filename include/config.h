@@ -14,6 +14,15 @@
 #include <Arduino.h>
 #include "sensor.h"
 
+// Bluetooth transport: BLE (NimBLE, KISS-over-BLE service per hessu/aprs-specs
+// BLE-KISS-API) on targets without classic BT, or on classic ESP32 when built
+// with -DBT_BLE. Otherwise classic Bluetooth SPP (BluetoothSerial).
+#if !defined(CONFIG_IDF_TARGET_ESP32) || defined(CONFIG_IDF_TARGET_ESP32C6) || defined(BT_BLE)
+#define BT_USE_BLE 1
+#else
+#define BT_USE_BLE 0
+#endif
+
 #define COMMENT_SIZE 25
 #define STATUS_SIZE 50
 
@@ -108,6 +117,7 @@ typedef struct Config_Struct
 		char bt_name[20];
 		uint32_t bt_pin;
 		uint8_t bt_power;
+		bool bt_rx2rf; // false: Bluetooth is output only (display/app); packets from the app are ignored
 
 	//--RF Module
 	bool rf_en;

@@ -334,7 +334,7 @@ bool firstGpsTime = true;
 time_t startTime = 0;
 
 #ifdef BLUETOOTH
-#if !defined(CONFIG_IDF_TARGET_ESP32)
+#if BT_USE_BLE
 #define CONFIG_BT_NIMBLE_MEM_ALLOC_MODE_EXTERNAL 1
 #include <NuSerial.hpp>
 #include <NimBLEDevice.h>
@@ -1647,10 +1647,11 @@ void defaultConfig()
     config.bt_slave = false;
     config.bt_master = false;
     config.bt_mode = 1; // 0-None,1-TNC2RAW,2-KISS
+    config.bt_rx2rf = false; // app is presentation only; tracker does all APRS
     config.bt_power = 3;
     sprintf(config.bt_name, "ESP32APRS_Audio");
     config.bt_pin = 0;
-#if !defined(CONFIG_IDF_TARGET_ESP32)
+#if BT_USE_BLE
     // Bluetooth BLE
     sprintf(config.bt_uuid, "00000001-ba2a-46c9-ae49-01b0961f68bb");
     sprintf(config.bt_uuid_rx, "00000002-ba2a-46c9-ae49-01b0961f68bb");
@@ -2944,7 +2945,7 @@ static bool isOwnSrc(const char *tnc2)
 
 static void btWrite(const uint8_t *b, size_t n)
 {
-#if !defined(CONFIG_IDF_TARGET_ESP32) || defined(CONFIG_IDF_TARGET_ESP32C6)
+#if BT_USE_BLE
     if (NuSerial.isConnected())
         NuSerial.write(b, n);
 #else
@@ -3541,7 +3542,7 @@ void bluetooth_init()
 {
     if (config.bt_master == true)
     {
-#if !defined(CONFIG_IDF_TARGET_ESP32) || defined(CONFIG_IDF_TARGET_ESP32C6)
+#if BT_USE_BLE
         // Initialize BLE stack and Nordic UART service
         NimBLEDevice::init(config.bt_name);
         NimBLEDevice::getAdvertising()->setName(config.bt_name);
@@ -6750,10 +6751,15 @@ void taskAPRS(void *pvParameters)
         }
 
 #ifdef BLUETOOTH
-#if !defined(CONFIG_IDF_TARGET_ESP32) || defined(CONFIG_IDF_TARGET_ESP32C6)
+#if BT_USE_BLE
         if (NuSerial.isConnected())
         {
-            if (NuSerial.available())
+            if (NuSerial.available() && config.bt_mode != 3 && !config.bt_rx2rf)
+            { // Output-only Bluetooth: ignore anything the app sends
+                while (NuSerial.available())
+                    NuSerial.read();
+            }
+            else if (NuSerial.available())
             {
                 log_d("Bluetooth RX Data: %d Byte", NuSerial.available());
                 if (config.bt_mode == 1)
@@ -6787,7 +6793,12 @@ void taskAPRS(void *pvParameters)
             }
         }
 #else
-        if (SerialBT.available())
+        if (SerialBT.available() && config.bt_mode != 3 && !config.bt_rx2rf)
+        { // Output-only Bluetooth: ignore anything the app sends
+            while (SerialBT.available())
+                SerialBT.read();
+        }
+        else if (SerialBT.available())
         {
             log_d("Bluetooth RX Data: %d Byte", SerialBT.available());
             if (config.bt_mode == 1)
@@ -7264,7 +7275,7 @@ void taskAPRS(void *pvParameters)
                         {
                             char *rawP = (char *)malloc(tnc2.length());
                             memcpy(rawP, tnc2.c_str(), tnc2.length());
-#if defined(CONFIG_IDF_TARGET_ESP32)
+#if !BT_USE_BLE
                             SerialBT.write((uint8_t *)rawP, tnc2.length());
                             SerialBT.write((const uint8_t *)"\r\n", 2);
 #else
@@ -7280,7 +7291,7 @@ void taskAPRS(void *pvParameters)
                         { // KISS
                             uint8_t pkg[500];
                             int sz = kiss_wrapper(pkg);
-#if defined(CONFIG_IDF_TARGET_ESP32)
+#if !BT_USE_BLE
                             SerialBT.write(pkg, sz);
 #else
                             if (NuSerial.isConnected())

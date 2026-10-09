@@ -10948,6 +10948,7 @@ void handle_wireless(AsyncWebServerRequest *request)
 	else if (request->hasArg("commitBluetooth"))
 	{
 		bool btMaster = false;
+		bool btRx2rf = false;
 		for (uint8_t i = 0; i < request->args(); i++)
 		{
 			if (request->argName(i) == "btMaster")
@@ -10961,6 +10962,11 @@ void handle_wireless(AsyncWebServerRequest *request)
 				}
 			}
 
+			if (request->argName(i) == "bt_rx2rf")
+			{
+				if (String(request->arg(i)) == "OK")
+					btRx2rf = true;
+			}
 			if (request->argName(i) == "bt_name")
 			{
 				if (request->arg(i) != "")
@@ -10968,7 +10974,7 @@ void handle_wireless(AsyncWebServerRequest *request)
 					strcpy(config.bt_name, request->arg(i).c_str());
 				}
 			}
-			#if !defined(CONFIG_IDF_TARGET_ESP32)
+			#if BT_USE_BLE
 			if (request->argName(i) == "bt_uuid")
 			{
 				if (request->arg(i) != "")
@@ -11009,6 +11015,7 @@ void handle_wireless(AsyncWebServerRequest *request)
 			}
 		}
 		config.bt_master = btMaster;
+		config.bt_rx2rf = btRx2rf;
 		saveConfig(request);
 	}
 	#endif
@@ -11191,7 +11198,7 @@ void handle_wireless(AsyncWebServerRequest *request)
 		snprintf(tempHtml, sizeof(tempHtml), "<td style=\"text-align: left;\"><input min=\"0\" max=\"999999\" id=\"bt_pin\" name=\"bt_pin\" type=\"number\" value=\"%d\" /></td> <i>*Value 0 is no auth.</i>\n", config.bt_pin);
 		strcat(html, tempHtml);
 		strcat(html, "</tr>\n");
-		#if !defined(CONFIG_IDF_TARGET_ESP32)
+		#if BT_USE_BLE
 		strcat(html, "<tr>\n");
 		strcat(html, "<td align=\"right\"><b>UUID:</b></td>\n");
 		snprintf(tempHtml, sizeof(tempHtml), "<td style=\"text-align: left;\"><input maxlength=\"37\" size=\"38\" id=\"bt_uuid\" name=\"bt_uuid\" type=\"text\" value=\"%s\" /></td>\n", config.bt_uuid);
@@ -11217,6 +11224,8 @@ void handle_wireless(AsyncWebServerRequest *request)
 		snprintf(tempHtml, sizeof(tempHtml), "<option value=\"0\" %s>NONE</option>\n<option value=\"1\" %s>TNC2</option>\n<option value=\"2\" %s>KISS</option>\n", btModeOff, btModeTNC2, btModeKISS);
 		strcat(html, tempHtml);
 		strcat(html, "</select>\n");
+		snprintf(tempHtml, sizeof(tempHtml), " <label>App may transmit via RF: <input type=\"checkbox\" name=\"bt_rx2rf\" value=\"OK\" %s></label><br/>\n", config.bt_rx2rf ? "checked" : "");
+		strcat(html, tempHtml);
 
 		strcat(html, "<label style=\"font-size: 8pt;text-align: right;\">*See the following for generating UUIDs: <a href=\"https://www.uuidgenerator.net\" target=\"_blank\">https://www.uuidgenerator.net</a></label></td>\n");
 		strcat(html, "</tr>\n");

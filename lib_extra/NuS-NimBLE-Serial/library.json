@@ -1,0 +1,9 @@
+{
+  "name": "NuS-NimBLE-Serial",
+  "version": "4.1.0",
+  "frameworks": "arduino",
+  "platforms": "espressif32",
+  "build": {
+    "srcFilter": ["+<NuS.cpp>", "+<NuSerial.cpp>", "+<NuStream.cpp>"]
+  }
+}
