@@ -40,9 +40,19 @@ char *allocateStringMemory(size_t size)
 	}
 	// If PSRAM allocation fails, fall back to regular heap
 #endif
-	// Regular heap allocation
+#ifndef BOARD_HAS_PSRAM
+	// Page buffers are sized for PSRAM builds, where the size above is doubled.
+	// Without PSRAM, give large buffers the same headroom when the heap allows,
+	// otherwise pages that outgrow the nominal size overflow (e.g. MOD page).
+	if (size >= 4096)
+	{
+		ptr = (char *)calloc(size * 2, sizeof(char));
+		if (ptr != NULL)
+			return ptr;
+	}
+#endif
+	// Regular heap allocation (calloc zero-fills)
 	ptr = (char *)calloc(size, sizeof(char));
-	memset(ptr, 0, size); // Initialize memory to zero
 	return ptr;
 }
 
