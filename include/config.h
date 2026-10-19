@@ -11,6 +11,9 @@
 #ifndef CONFIG_H
 #define CONFIG_H
 
+// SM0TGY fork firmware version (common reference). Bump for every build handed out.
+#define FORK_VERSION "1.0"
+
 #include <Arduino.h>
 #include "sensor.h"
 

@@ -805,7 +805,8 @@ void handle_sidebar(AsyncWebServerRequest *request)
 		return; // Memory allocation failed
 	}
 
-	strcpy(html, "<table style=\"background:white;border-collapse: unset;\">\n");
+	strcpy(html, "<div style=\"text-align:center;font-weight:bold;\">SM0TGY v" FORK_VERSION "</div>\n");
+	strcat(html, "<table style=\"background:white;border-collapse: unset;\">\n");
 	strcat(html, "<tr>\n");
 	strcat(html, "<th colspan=\"2\">Modes Enabled</th>\n");
 	strcat(html, "</tr>\n");
@@ -11692,7 +11693,7 @@ void handle_about(AsyncWebServerRequest *request)
 	char *temp_str = allocateStringMemory(512);
 	if (temp_str)
 	{
-		snprintf(temp_str, 512, "<tr><td align=\"right\"><b>Firmware Version: </b></td><td align=\"left\"> V%s%s</td></tr>\n", VERSION, VERSION_BUILD);
+		snprintf(temp_str, 512, "<tr><td align=\"right\"><b>Firmware Version: </b></td><td align=\"left\"> SM0TGY v%s (ESP32APRS_Audio V%s%s)</td></tr>\n", FORK_VERSION, VERSION, VERSION_BUILD);
 		strcat(webString, temp_str);
 
 		snprintf(temp_str, 512, "<tr><td align=\"right\"><b>RF Module: </b></td><td align=\"left\"> %s</td></tr>\n", RF_TYPE[config.rf_type]);

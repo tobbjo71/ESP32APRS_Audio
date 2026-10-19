@@ -3631,7 +3631,7 @@ void setup()
     }
 
     Serial.println();
-    Serial.println("Start ESP32APRS_Audio V" + String(VERSION));
+    Serial.println("Start SM0TGY APRS Tracker v" FORK_VERSION " (ESP32APRS_Audio V" + String(VERSION) + String(VERSION_BUILD) + ")");
     Serial.println("Push BOOT after 3 sec for Factory Default config.");
 
 // if (!EEPROM.begin(EEPROM_SIZE))
