@@ -271,6 +271,8 @@ void setMainPage(AsyncWebServerRequest *request)
 	strcat(webString, "$(\"#contentmain\").load(\"/digi\");\n");
 	strcat(webString, "} else if (tabName == 'TRACKER') {\n");
 	strcat(webString, "$(\"#contentmain\").load(\"/tracker\");\n");
+	strcat(webString, "} else if (tabName == 'RX') {\n");
+	strcat(webString, "$(\"#contentmain\").load(\"/tnc2\");\n");
 	strcat(webString, "} else if (tabName == 'GNSS') {\n");
 	strcat(webString, "$(\"#contentmain\").load(\"/gnss\");\n");
 #ifndef FORK_SLIM
@@ -430,6 +432,7 @@ void setMainPage(AsyncWebServerRequest *request)
 	strcat(webString, "<button class=\"nav-tabs\" onclick=\"selectTab(event, 'DIGI')\">DIGI</button>\n");
 	strcat(webString, "<button class=\"nav-tabs\" onclick=\"selectTab(event, 'TRACKER')\">TRACKER</button>\n");
 	strcat(webString, "<button class=\"nav-tabs\" onclick=\"selectTab(event, 'GNSS')\">GNSS</button>\n");
+	strcat(webString, "<button class=\"nav-tabs\" onclick=\"selectTab(event, 'RX')\">RX</button>\n");
 #ifndef FORK_SLIM
 	strcat(webString, "<button class=\"nav-tabs\" onclick=\"selectTab(event, 'WX')\">WX</button>\n");
 	strcat(webString, "<button class=\"nav-tabs\" onclick=\"selectTab(event, 'TLM')\">TLM</button>\n");
@@ -11452,16 +11455,16 @@ void handle_ws_gnss(char *nmea, size_t size)
 	// unsigned char nmea_enc[output_length];
 	// char jsonMsg[output_length + 100];
 	// encode_base64((unsigned char *)nmea, size, (unsigned char *)nmea_enc);
-	// sprintf(jsonMsg, "{\"en\":\"%d\",\"lat\":\"%.5f\",\"lng\":\"%.5f\",\"alt\":\"%.2f\",\"spd\":\"%.2f\",\"csd\":\"%.1f\",\"hdop\":\"%.2f\",\"sat\":\"%d\",\"time\":\"%d\",\"timeStamp\":\"%li\",\"RAW\":\"", (int)config.gnss_enable, gps.location.lat(), gps.location.lng(), gps.altitude.meters(), gps.speed.kmph(), gps.course.deg(), gps.hdop.hdop(), gps.satellites.value(), gps.time.value(), timeStamp);
 	// strncat(jsonMsg, (const char *)nmea_enc, output_length);
 	// strcat(jsonMsg, "\"}");
 	unsigned int output_length = encode_base64_length(size);
 	unsigned char *nmea_enc = (unsigned char *)calloc(output_length + 2, sizeof(unsigned char));
-	char *jsonMsg = (char *)calloc(output_length + 200, sizeof(char));
+	char *jsonMsg = (char *)calloc(output_length + 240, sizeof(char));
 	if (nmea_enc && jsonMsg)
 	{
 		encode_base64((unsigned char *)nmea, size, (unsigned char *)nmea_enc);
-		sprintf(jsonMsg, "{\"en\":\"%d\",\"lat\":\"%.5f\",\"lng\":\"%.5f\",\"alt\":\"%.2f\",\"spd\":\"%.2f\",\"csd\":\"%.1f\",\"hdop\":\"%.2f\",\"sat\":\"%d\",\"time\":\"%d\",\"timeStamp\":\"%li\",\"RAW\":\"", (int)config.gnss_enable, gps.location.lat(), gps.location.lng(), gps.altitude.meters(), gps.speed.kmph(), gps.course.deg(), gps.hdop.hdop(), gps.satellites.value(), gps.time.value(), timeStamp);
+		int fixNow = (gps.location.isValid() && gps.location.age() < 3000) ? 1 : 0;
+		sprintf(jsonMsg, "{\"fix\":\"%d\",\"en\":\"%d\",\"lat\":\"%.5f\",\"lng\":\"%.5f\",\"alt\":\"%.2f\",\"spd\":\"%.2f\",\"csd\":\"%.1f\",\"hdop\":\"%.2f\",\"sat\":\"%d\",\"time\":\"%d\",\"timeStamp\":\"%li\",\"RAW\":\"", fixNow, (int)config.gnss_enable, gps.location.lat(), gps.location.lng(), gps.altitude.meters(), gps.speed.kmph(), gps.course.deg(), gps.hdop.hdop(), gps.satellites.value(), gps.time.value(), timeStamp);
 		strncat(jsonMsg, (const char *)nmea_enc, output_length);
 		strcat(jsonMsg, "\"}");
 		ws_gnss.textAll(jsonMsg);
@@ -11514,17 +11517,17 @@ void handle_test(AsyncWebServerRequest *request)
 	// (-40..0 dBV). Used when setting RV2 (RX level).
 	strcpy(webString, "<html>\n<head>\n<style>#bar{height:18px;background:#0a0;width:0}#barbox{width:300px;border:1px solid #888}</style>\n");
 	strcat(webString, "<script>\n");
-	strcat(webString, "function vu(){var ws=new WebSocket('ws://'+location.hostname+':81/ws');\n");
-	strcat(webString, "ws.onmessage=function(event){var j=JSON.parse(event.data);if(parseInt(j.Active)!=1)return;\n");
+	strcat(webString, "function vu(){if(window.vuWs){try{window.vuWs.close();}catch(e){}}var ws=new WebSocket('ws://'+location.hostname+':81/ws');window.vuWs=ws;\n");
+	strcat(webString, "ws.onmessage=function(event){if(!document.getElementById('vrms')){ws.close();return;}var j=JSON.parse(event.data);if(parseInt(j.Active)!=1)return;\n");
 	strcat(webString, "var v=parseFloat(j.mVrms)/1000;var d=20*Math.log10(v);if(!isFinite(d)||d<-40)d=-40;\n");
 	strcat(webString, "document.getElementById('vrms').innerHTML=v.toFixed(3);document.getElementById('dbv').innerHTML=d.toFixed(1);\n");
 	strcat(webString, "var b=document.getElementById('bar');b.style.width=Math.round((d+40)/40*300)+'px';b.style.background=(d>-10)?'#c02316':(d>-20?'#00c000':'#e0b000');\n");
 	strcat(webString, "var t=document.getElementById('raw_txt');t.value+=new Date(Number(j.timeStamp)*1000).toISOString()+' ['+v.toFixed(3)+' Vrms, '+d.toFixed(1)+' dBV]\\n'+atob(j.RAW)+'\\n';t.scrollTop=t.scrollHeight;};}\n");
 	strcat(webString, "</script>\n");
-	strcat(webString, "</head><body onload=\"vu()\">\n<table>\n");
+	strcat(webString, "</head><body>\n<table>\n");
 	strcat(webString, "<tr><td><div style=\"margin:10px\"><b>RX audio level (last packet)</b><br />Vrms: <span id=\"vrms\">-</span> &nbsp; dBV: <span id=\"dbv\">-</span><div id=\"barbox\"><div id=\"bar\"></div></div><small>-40 dBV ... 0 dBV. Green -20..-10 dBV, red above -10 dBV.</small></div></td></tr>\n");
 	strcat(webString, "<tr><td><div style=\"margin: 15px;\">Terminal<br /><textarea id=\"raw_txt\" name=\"raw_txt\" rows=\"50\" cols=\"80\" /></textarea></div></td></tr>\n");
-	strcat(webString, "</table>\n");
+	strcat(webString, "</table>\n<script>vu();</script>\n");
 
 	strcat(webString, "</body></html>\n");
 
@@ -12025,11 +12028,12 @@ void handle_gnss(AsyncWebServerRequest *request)
 	strcat(webString, "ws.onmessage = function(event) {\nif (!document.getElementById(\"raw_txt\")) { ws.close(); return; }\n");
 	strcat(webString, "const jsonR=JSON.parse(event.data);\n");
 	strcat(webString, "document.getElementById(\"en\").innerHTML=parseInt(jsonR.en);\n");
-	strcat(webString, "document.getElementById(\"lat\").innerHTML=parseFloat(jsonR.lat);\n");
-	strcat(webString, "document.getElementById(\"lng\").innerHTML=parseFloat(jsonR.lng);\n");
-	strcat(webString, "document.getElementById(\"alt\").innerHTML=parseFloat(jsonR.alt);\n");
-	strcat(webString, "document.getElementById(\"spd\").innerHTML=parseFloat(jsonR.spd);\n");
-	strcat(webString, "document.getElementById(\"csd\").innerHTML=parseFloat(jsonR.csd);\n");
+	strcat(webString, "var f=parseInt(jsonR.fix)==1;document.getElementById(\"fix\").innerHTML=f?\"Yes\":\"<b style=\\\"color:#c02316\\\">No fix</b>\";\n");
+	strcat(webString, "document.getElementById(\"lat\").innerHTML=f?parseFloat(jsonR.lat):\"-\";\n");
+	strcat(webString, "document.getElementById(\"lng\").innerHTML=f?parseFloat(jsonR.lng):\"-\";\n");
+	strcat(webString, "document.getElementById(\"alt\").innerHTML=f?parseFloat(jsonR.alt):\"-\";\n");
+	strcat(webString, "document.getElementById(\"spd\").innerHTML=f?parseFloat(jsonR.spd):\"-\";\n");
+	strcat(webString, "document.getElementById(\"csd\").innerHTML=f?parseFloat(jsonR.csd):\"-\";\n");
 	strcat(webString, "document.getElementById(\"hdop\").innerHTML=parseFloat(jsonR.hdop);\n");
 	strcat(webString, "document.getElementById(\"sat\").innerHTML=parseInt(jsonR.sat);\n");
 	strcat(webString, "document.getElementById(\"time\").innerHTML=parseInt(jsonR.time);\n");
@@ -12052,6 +12056,7 @@ void handle_gnss(AsyncWebServerRequest *request)
 		{
 			snprintf(temp_en, 512, "<tr><td align=\"right\"><b>Enable: </b></td><td align=\"left\"> <label id=\"en\">%d</label></td></tr>", config.gnss_enable);
 			strcat(webString, temp_en);
+			strcat(webString, "<tr><td align=\"right\"><b>Fix: </b></td><td align=\"left\"> <label id=\"fix\">-</label></td></tr>");
 			free(temp_en);
 		}
 	}
@@ -12060,7 +12065,7 @@ void handle_gnss(AsyncWebServerRequest *request)
 		char *temp_lat = allocateStringMemory(512);
 		if (temp_lat)
 		{
-			snprintf(temp_lat, 512, "<tr><td align=\"right\"><b>Latitude: </b></td><td align=\"left\"> <label id=\"lat\">%.5f</label></td></tr>", gps.location.lat());
+			snprintf(temp_lat, 512, "<tr><td align=\"right\"><b>Latitude: </b></td><td align=\"left\"> <label id=\"lat\">-</label></td></tr>");
 			strcat(webString, temp_lat);
 			free(temp_lat);
 		}
@@ -12070,7 +12075,7 @@ void handle_gnss(AsyncWebServerRequest *request)
 		char *temp_lng = allocateStringMemory(512);
 		if (temp_lng)
 		{
-			snprintf(temp_lng, 512, "<tr><td align=\"right\"><b>Longitude: </b></td><td align=\"left\"> <label id=\"lng\">%.5f</label></td></tr>", gps.location.lng());
+			snprintf(temp_lng, 512, "<tr><td align=\"right\"><b>Longitude: </b></td><td align=\"left\"> <label id=\"lng\">-</label></td></tr>");
 			strcat(webString, temp_lng);
 			free(temp_lng);
 		}
@@ -12080,7 +12085,7 @@ void handle_gnss(AsyncWebServerRequest *request)
 		char *temp_alt = allocateStringMemory(512);
 		if (temp_alt)
 		{
-			snprintf(temp_alt, 512, "<tr><td align=\"right\"><b>Altitude: </b></td><td align=\"left\"> <label id=\"alt\">%.2f</label> m.</td></tr>", gps.altitude.meters());
+			snprintf(temp_alt, 512, "<tr><td align=\"right\"><b>Altitude: </b></td><td align=\"left\"> <label id=\"alt\">-</label> m.</td></tr>");
 			strcat(webString, temp_alt);
 			free(temp_alt);
 		}
@@ -12090,7 +12095,7 @@ void handle_gnss(AsyncWebServerRequest *request)
 		char *temp_spd = allocateStringMemory(512);
 		if (temp_spd)
 		{
-			snprintf(temp_spd, 512, "<tr><td align=\"right\"><b>Speed: </b></td><td align=\"left\"> <label id=\"spd\">%.2f</label> km/h</td></tr>", gps.speed.kmph());
+			snprintf(temp_spd, 512, "<tr><td align=\"right\"><b>Speed: </b></td><td align=\"left\"> <label id=\"spd\">-</label> km/h</td></tr>");
 			strcat(webString, temp_spd);
 			free(temp_spd);
 		}
@@ -12100,7 +12105,7 @@ void handle_gnss(AsyncWebServerRequest *request)
 		char *temp_csd = allocateStringMemory(512);
 		if (temp_csd)
 		{
-			snprintf(temp_csd, 512, "<tr><td align=\"right\"><b>Course: </b></td><td align=\"left\"> <label id=\"csd\">%.1f</label></td></tr>", gps.course.deg());
+			snprintf(temp_csd, 512, "<tr><td align=\"right\"><b>Course: </b></td><td align=\"left\"> <label id=\"csd\">-</label></td></tr>");
 			strcat(webString, temp_csd);
 			free(temp_csd);
 		}
