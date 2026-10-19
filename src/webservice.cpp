@@ -770,20 +770,21 @@ void handle_dashboard(AsyncWebServerRequest *request)
 	strcat(webString, "<th colspan=\"7\" style=\"background-color: #070ac2;\">LAST HEARD <a href=\"/tnc2\" target=\"_tnc2\" style=\"color: yellow;font-size:8pt\">[RAW]</a></th>\n");
 	strcat(webString, "<tr>\n");
 	strcat(webString, "<th data-sort=\"time\" style=\"min-width:10ch\"><span><b>Time (");
-	if (config.timeZone >= 0)
+	float tzNowH = tzOffsetNow();
+	if (tzNowH >= 0)
 		strcat(webString, "+");
 	// else
 	//	strcat(webString, "-");
 
-	if (config.timeZone == (int)config.timeZone)
+	if (tzNowH == (int)tzNowH)
 	{
-		sprintf(temp_buffer, "%d", (int)config.timeZone);
+		sprintf(temp_buffer, "%d", (int)tzNowH);
 		strcat(webString, temp_buffer);
 		strcat(webString, ")</b></span><span class=\"arrow\"></span></th>\n");
 	}
 	else
 	{
-		sprintf(temp_buffer, "%.1f", config.timeZone);
+		sprintf(temp_buffer, "%.1f", tzNowH);
 		strcat(webString, temp_buffer);
 		strcat(webString, ")</b></span><span class=\"arrow\"></span></th>\n");
 	}
@@ -1465,20 +1466,21 @@ String event_chatMessage(bool gethtml)
 
 	strcpy(html, "<tr>\n");
 	strcat(html, "<th style=\"width:60pt\"><span><b>Time (");
-	if (config.timeZone >= 0)
+	float tzNowH2 = tzOffsetNow();
+	if (tzNowH2 >= 0)
 		strcat(html, "+");
 
 	// Convert timezone to string
 	char temp_buffer[64];
-	if (config.timeZone == (int)config.timeZone)
+	if (tzNowH2 == (int)tzNowH2)
 	{
-		snprintf(temp_buffer, sizeof(temp_buffer), "%d", (int)config.timeZone);
+		snprintf(temp_buffer, sizeof(temp_buffer), "%d", (int)tzNowH2);
 		strcat(html, temp_buffer);
 		strcat(html, ")</b></span></th>\n");
 	}
 	else
 	{
-		snprintf(temp_buffer, sizeof(temp_buffer), "%.1f", config.timeZone);
+		snprintf(temp_buffer, sizeof(temp_buffer), "%.1f", tzNowH2);
 		strcat(html, temp_buffer);
 		strcat(html, ")</b></span></th>\n");
 	}
@@ -5698,12 +5700,18 @@ void handle_system(AsyncWebServerRequest *request)
 				if (request->arg(i) != "")
 				{
 					config.timeZone = request->arg(i).toFloat();
-					// Serial.println("WEB Config Time Zone);
-					configTime(3600 * config.timeZone, 0, config.ntp_host);
 				}
 				break;
 			}
 		}
+		config.tz_dst = false;
+		for (uint8_t i = 0; i < request->args(); i++)
+		{
+			if (request->argName(i) == "SetTzDst" && request->arg(i) == "OK")
+				config.tz_dst = true;
+		}
+		applyTimeZone();
+		configTzTime(tzPosixString(), config.ntp_host);
 		saveConfig(request);
 	}
 	else if (request->hasArg("updateHostName"))
@@ -5733,7 +5741,7 @@ void handle_system(AsyncWebServerRequest *request)
 				{
 					// Serial.println("WEB Config NTP");
 					strcpy(config.ntp_host, request->arg(i).c_str());
-					configTime(3600 * config.timeZone, 0, config.ntp_host);
+					configTzTime(tzPosixString(), config.ntp_host);
 				}
 				break;
 			}
@@ -5786,7 +5794,7 @@ void handle_system(AsyncWebServerRequest *request)
 
 					// tmstruct.tm_year) + 1900, (tmstruct.tm_mon) + 1, tmstruct.tm_mday, tmstruct.tm_hour, tmstruct.tm_min, tmstruct.tm_sec
 
-					time_t rtc = timeStamp - (config.timeZone * 3600);
+					time_t rtc = timeStamp - (time_t)(tzOffsetNow() * 3600);
 					timeval tv = {rtc, 0};
 					timezone tz = {(0) + DST_MN, 0};
 					settimeofday(&tv, &tz);
@@ -6405,6 +6413,7 @@ void handle_system(AsyncWebServerRequest *request)
 			strcat(html, temp_buffer);
 		}
 		strcat(html, "</select>");
+		strcat(html, config.tz_dst ? " <label><input type=\"checkbox\" name=\"SetTzDst\" value=\"OK\" checked> EU summer time</label> " : " <label><input type=\"checkbox\" name=\"SetTzDst\" value=\"OK\"> EU summer time</label> ");
 		strcat(html, "<button type='submit' id='updateTimeZone'  name=\"commit\"> TZ Update </button>\n");
 		strcat(html, "<input type=\"hidden\" name=\"updateTimeZone\"/></form>\n</td>\n");
 		// html += "<input class=\"btn btn-primary\" id=\"updateTimeZone\" name=\"updateTimeZone\" type=\"submit\" value=\"TZ Update\" maxlength=\"80\"/></td>\n");

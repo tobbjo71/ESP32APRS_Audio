@@ -57,6 +57,7 @@ bool saveConfiguration(const char *filename, const Configuration &config)
     doc["txTimeSlot"] = config.tx_timeslot;
     doc["syncTime"] = config.synctime;
     doc["timeZone"] = config.timeZone;
+    doc["tzDST"] = config.tz_dst;
     doc["ntpHost"] = config.ntp_host;
     doc["WiFiMode"] = (signed char)config.wifi_mode;
     doc["WiFiPwr"] = config.wifi_power;
@@ -609,6 +610,7 @@ bool loadConfiguration(const char *filename, Configuration &config)
         config.tx_timeslot = doc["txTimeSlot"] | 2000;
         config.synctime = doc["syncTime"];
         config.timeZone = doc["timeZone"];
+        config.tz_dst = doc["tzDST"] | true;
         strlcpy(config.ntp_host, doc["ntpHost"], sizeof(config.ntp_host));
         config.wifi_mode = doc["WiFiMode"];
         config.wifi_power = doc["WiFiPwr"];

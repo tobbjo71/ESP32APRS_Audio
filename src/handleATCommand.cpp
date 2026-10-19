@@ -167,7 +167,7 @@ String handleATCommand(String cmd)
         timeinfo.Minute = ii;
         timeinfo.Second = ss;
         time_t timeStamp = makeTime(timeinfo);
-        time_t rtc = timeStamp - (config.timeZone * 3600);
+        time_t rtc = timeStamp - (time_t)(tzOffsetNow() * 3600);
         timeval tv = {rtc, 0};
         timezone tz = {(0) + DST_MN, 0};
         settimeofday(&tv, &tz);
@@ -182,6 +182,7 @@ String handleATCommand(String cmd)
     else if (cmd.startsWith("AT+TIMEZONE="))
     {
         config.timeZone = cmd.substring(12).toFloat();
+        applyTimeZone();
         return "OK";
     }
 

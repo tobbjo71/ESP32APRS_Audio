@@ -991,7 +991,7 @@ time_t setGpsTime()
         timeinfo.Minute = gps.time.minute();
         timeinfo.Second = gps.time.second();
         time_t timeStamp = makeTime(timeinfo);
-        time = timeStamp + config.timeZone * SECS_PER_HOUR;
+        time = timeStamp + tzOffsetNow() * SECS_PER_HOUR;
         setTime(time);
         // setTime(timeinfo.Hour,timeinfo.Minute,timeinfo.Second,timeinfo.Day, timeinfo.Month, timeinfo.Year);
         return time;
@@ -1012,7 +1012,7 @@ time_t getGpsTime()
         timeinfo.Minute = gps.time.minute();
         timeinfo.Second = gps.time.second();
         time_t timeStamp = makeTime(timeinfo);
-        time = timeStamp + config.timeZone * SECS_PER_HOUR;
+        time = timeStamp + tzOffsetNow() * SECS_PER_HOUR;
         return time;
     }
     return 0;
@@ -1092,9 +1092,9 @@ void logTracker(double lat, double lon, double speed, double course)
         {
             nowTime = timeGps;
             setTime(nowTime);
-            time_t rtc = nowTime - (time_t)(config.timeZone * (float)SECS_PER_HOUR);
+            time_t rtc = nowTime - (time_t)(tzOffsetNow() * (float)SECS_PER_HOUR);
             timeval tv = {rtc, 0};
-            timezone tz = {(int)(config.timeZone * (float)SECS_PER_HOUR), 0};
+            timezone tz = {(int)(tzOffsetNow() * (float)SECS_PER_HOUR), 0};
             settimeofday(&tv, &tz);
         }
     }
@@ -1233,9 +1233,9 @@ void logIGate(double lat, double lon, double speed, double course)
         {
             nowTime = timeGps;
             setTime(nowTime);
-            time_t rtc = nowTime - (time_t)(config.timeZone * (float)SECS_PER_HOUR);
+            time_t rtc = nowTime - (time_t)(tzOffsetNow() * (float)SECS_PER_HOUR);
             timeval tv = {rtc, 0};
-            timezone tz = {(int)(config.timeZone * (float)SECS_PER_HOUR), 0};
+            timezone tz = {(int)(tzOffsetNow() * (float)SECS_PER_HOUR), 0};
             settimeofday(&tv, &tz);
         }
     }
@@ -1365,9 +1365,9 @@ void logDigi(double lat, double lon, double speed, double course)
         {
             nowTime = timeGps;
             setTime(nowTime);
-            time_t rtc = nowTime - (time_t)(config.timeZone * (float)SECS_PER_HOUR);
+            time_t rtc = nowTime - (time_t)(tzOffsetNow() * (float)SECS_PER_HOUR);
             timeval tv = {rtc, 0};
-            timezone tz = {(int)(config.timeZone * (float)SECS_PER_HOUR), 0};
+            timezone tz = {(int)(tzOffsetNow() * (float)SECS_PER_HOUR), 0};
             settimeofday(&tv, &tz);
         }
     }
@@ -1497,9 +1497,9 @@ void logWeather(double lat, double lon, double speed, double course)
         {
             nowTime = timeGps;
             setTime(nowTime);
-            time_t rtc = nowTime - (time_t)(config.timeZone * (float)SECS_PER_HOUR);
+            time_t rtc = nowTime - (time_t)(tzOffsetNow() * (float)SECS_PER_HOUR);
             timeval tv = {rtc, 0};
-            timezone tz = {(int)(config.timeZone * (float)SECS_PER_HOUR), 0};
+            timezone tz = {(int)(tzOffsetNow() * (float)SECS_PER_HOUR), 0};
             settimeofday(&tv, &tz);
         }
     }
@@ -1618,6 +1618,52 @@ void logWeather(double lat, double lon, double speed, double course)
 }
 #endif
 
+// ---- Time zone with optional EU summer time (SM0TGY fork) ----
+// System clock runs in UTC. The POSIX TZ string lets localtime()/getLocalTime()
+// switch automatically; tzOffsetNow() gives the offset in hours for code that
+// adds the offset by hand.
+const char *tzPosixString()
+{
+    static char tz[48];
+    float z = config.timeZone;
+    int h = (int)z;
+    int m = (int)((z - h) * 60);
+    if (m < 0) m = -m;
+    // POSIX sign is inverted: UTC+1 is "XXX-1"
+    if (m)
+        snprintf(tz, sizeof(tz), "STD%s%d:%02d", (z >= 0) ? "-" : "+", abs(h), m);
+    else
+        snprintf(tz, sizeof(tz), "STD%s%d", (z >= 0) ? "-" : "+", abs(h));
+    if (config.tz_dst)
+    {
+        // EU rule: change at 01:00 UTC = (1 + offset) local standard time / (2 + offset) local summer time
+        char rule[32];
+        snprintf(rule, sizeof(rule), "DST,M3.5.0/%d,M10.5.0/%d", 1 + h, 2 + h);
+        strlcat(tz, rule, sizeof(tz));
+    }
+    return tz;
+}
+
+void applyTimeZone()
+{
+    setenv("TZ", tzPosixString(), 1);
+    tzset();
+}
+
+float tzOffsetNow()
+{
+    float z = config.timeZone;
+    if (config.tz_dst)
+    {
+        time_t t = time(NULL);
+        struct tm lt;
+        localtime_r(&t, &lt);
+        if (lt.tm_isdst > 0)
+            z += 1;
+    }
+    return z;
+}
+
 void defaultConfig()
 {
     log_d("Default configure mode!");
@@ -1627,7 +1673,8 @@ void defaultConfig()
     config.cpuFreq = 160;
     #endif
     config.synctime = true;
-    config.timeZone = 1; // Sweden, CET (fixed offset, no DST handling in firmware)
+    config.timeZone = 1; // Sweden: CET
+    config.tz_dst = true; // CEST in summer (EU rule)
     config.tx_timeslot = 2000; // ms
 
     config.wifi_mode = WIFI_AP_STA_FIX;
@@ -3666,6 +3713,7 @@ void setup()
         if (!loadConfiguration("/default.cfg", config))
             defaultConfig();
     }
+    applyTimeZone();
 
     //setCpuFrequencyMhz(config.cpuFreq);
 
@@ -6316,14 +6364,14 @@ void taskGPS(void *pvParameters)
                         gnssTimeInterval = millis() + 10000;
                         time_t nowTime;
                         time_t timeGps = getGpsTime(); // Local gps time
-                        time(&nowTime);
-                        int tdiff = abs(timeGps - nowTime);
+                        time(&nowTime);              // system clock is UTC
+                        int tdiff = abs((long)((timeGps - (time_t)(tzOffsetNow() * SECS_PER_HOUR)) - nowTime));
                         if (timeGps > 1700000000 && tdiff > 2) // && timeGps < 2347462800)
                         {
                             setTime(timeGps);
-                            time_t rtc = timeGps - (config.timeZone * SECS_PER_HOUR);
+                            time_t rtc = timeGps - (time_t)(tzOffsetNow() * SECS_PER_HOUR);
                             timeval tv = {rtc, 0};
-                            timezone tz = {static_cast<int>(config.timeZone * SECS_PER_HOUR), 0};
+                            timezone tz = {static_cast<int>(tzOffsetNow() * SECS_PER_HOUR), 0};
                             settimeofday(&tv, &tz);
                             log_d("\nSET GPS Timestamp = %u Year=%d\n", timeGps, year());
                             // firstGpsTime = false;
@@ -8785,7 +8833,7 @@ void taskNetwork(void *pvParameters)
                 NTP_Timeout = millis() + 86400000;
                 // setSyncProvider(getNtpTime);
                 log_d("Contacting Time Server\n");
-                configTime(3600 * config.timeZone, 0, config.ntp_host);
+                configTzTime(tzPosixString(), config.ntp_host);
                 vTaskDelay(1000 / portTICK_PERIOD_MS);
                 struct tm tmstruct;
                 if (getLocalTime(&tmstruct, 1000))
