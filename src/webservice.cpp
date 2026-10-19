@@ -56,6 +56,21 @@ char *allocateStringMemory(size_t size)
 	return ptr;
 }
 
+// Send a page built in a heap buffer without copying it into String objects.
+// beginResponse(..., (const char *)buf) makes up to two full String copies, which
+// fails silently on boards without PSRAM for large pages (empty/white page).
+// The buffer is shrunk to its used size, streamed directly, and freed when the
+// request is finished (onDisconnect). The caller must not free it.
+AsyncWebServerResponse *beginBufferResponse(AsyncWebServerRequest *request, char *buf)
+{
+	size_t len = strlen(buf);
+	char *shrunk = (char *)realloc(buf, len + 1);
+	if (shrunk != NULL)
+		buf = shrunk;
+	request->onDisconnect([buf]() { free(buf); });
+	return request->beginResponse_P(200, "text/html", (const uint8_t *)buf, len);
+}
+
 // Helper function to format integers to string using allocateStringMemory
 char *intToString(int value)
 {
@@ -454,11 +469,11 @@ void setMainPage(AsyncWebServerRequest *request)
 	strcat(webString, "</html>");
 
 
-	AsyncWebServerResponse *response = request->beginResponse(200, "text/html", (const char *)webString);
+	AsyncWebServerResponse *response = beginBufferResponse(request, webString);
 	response->addHeader("Sensor", "content");
 	response->addHeader("Cache-Control", "no-cache");
 	request->send(response);
-	free(webString);
+	// webString is freed when the request completes
 	lastHeardTimeout = 0;
 	lastHeard_Flag = true;
 }
@@ -782,11 +797,11 @@ void handle_dashboard(AsyncWebServerRequest *request)
 	strcat(webString, "</table>\n");
 	strcat(webString, "</div>\n");
 
-	AsyncWebServerResponse *response = request->beginResponse(200, "text/html", (const char *)webString);
+	AsyncWebServerResponse *response = beginBufferResponse(request, webString);
 	response->addHeader("dashboard", "content");
 	response->addHeader("Cache-Control", "no-cache");
 	request->send(response);
-	free(webString);
+	// webString is freed when the request completes
 	lastHeardTimeout = millis() + 500;
 	lastHeard_Flag = true;
 }
@@ -961,11 +976,11 @@ void handle_sidebar(AsyncWebServerRequest *request)
 	strcat(html, "$(window).trigger('resize');\n");
 	strcat(html, "</script>\n");
 
-	AsyncWebServerResponse *response = request->beginResponse(200, "text/html", (const char *)html);
+	AsyncWebServerResponse *response = beginBufferResponse(request, html);
 	response->addHeader("Sidebar", "content");
 	response->addHeader("Cache-Control", "no-cache");
 	request->send(response);
-	free(html); // Free the allocated memory
+	// html is freed when the request completes
 }
 
 void handle_symbol(AsyncWebServerRequest *request)
@@ -1104,11 +1119,11 @@ void handle_sysinfo(AsyncWebServerRequest *request)
 	strcat(html, "</table>\n");
 
 	// request->send(200, "text/html", html); // send to someones browser when asked
-	AsyncWebServerResponse *response = request->beginResponse(200, "text/html", (const char *)html);
+	AsyncWebServerResponse *response = beginBufferResponse(request, html);
 	response->addHeader("Sysinfo", "content");
 	response->addHeader("Cache-Control", "no-cache");
 	request->send(response);
-	free(html); // Free the allocated memory
+	// html is freed when the request completes
 }
 
 // Copy src into dest escaping characters that would break JSON string syntax
@@ -1867,11 +1882,11 @@ void handle_storage(AsyncWebServerRequest *request)
 
 	strcat(webString, "</body>\n</html>\n");
 
-	AsyncWebServerResponse *response = request->beginResponse(200, "text/html", (const char *)webString);
+	AsyncWebServerResponse *response = beginBufferResponse(request, webString);
 	response->addHeader("Sensor", "content");
 	response->addHeader("Cache-Control", "no-cache");
 	request->send(response);
-	free(webString); // Free the allocated memory
+	// webString is freed when the request completes
 	adcEn = 1;
 	dacEn = 0;
 }
@@ -2609,11 +2624,11 @@ void handle_radio(AsyncWebServerRequest *request)
 		// request->send(200, "text/html", html); // send to someones browser when asked
 		//request->send_P(200, "text/html", html);
 
-		AsyncWebServerResponse *response = request->beginResponse(200, "text/html", (const char *)html);
+		AsyncWebServerResponse *response = beginBufferResponse(request, html);
 		response->addHeader("Sysinfo", "content");
 		response->addHeader("Cache-Control", "no-cache");
 		request->send(response);
-		free(html); // Free the allocated memory
+		// html is freed when the request completes
 	}
 }
 
@@ -2890,11 +2905,11 @@ void handle_vpn(AsyncWebServerRequest *request)
 		strcat(html, "</form>");
 
 		// request->send(200, "text/html", html); // send to someones browser when asked
-		AsyncWebServerResponse *response = request->beginResponse(200, "text/html", (const char *)html);
+		AsyncWebServerResponse *response = beginBufferResponse(request, html);
 		response->addHeader("VPN", "content");
 		response->addHeader("Cache-Control", "no-cache");
 		request->send(response);
-		free(html); // Free the allocated memory
+		// html is freed when the request completes
 	}
 }
 
@@ -3242,11 +3257,11 @@ void handle_mqtt(AsyncWebServerRequest *request)
 		strcat(html, "</form>\n");
 
 		// request->send(200, "text/html", html); // send to someones browser when asked
-		AsyncWebServerResponse *response = request->beginResponse(200, "text/html", (const char *)html);
+		AsyncWebServerResponse *response = beginBufferResponse(request, html);
 		response->addHeader("MQTT", "content");
 		response->addHeader("Cache-Control", "no-cache");
 		request->send(response);
-		free(html); // Free the allocated memory
+		// html is freed when the request completes
 	}
 }
 #endif
@@ -3573,11 +3588,11 @@ void handle_msg(AsyncWebServerRequest *request)
 		strcat(html, "</td></tr></table>");
 
 		// request->send(200, "text/html", html); // send to someones browser when asked
-		AsyncWebServerResponse *response = request->beginResponse(200, "text/html", (const char *)html);
+		AsyncWebServerResponse *response = beginBufferResponse(request, html);
 		response->addHeader("MSG", "content");
 		response->addHeader("Cache-Control", "no-cache");
 		request->send(response);
-		free(html); // Free the allocated memory
+		// html is freed when the request completes
 	}
 }
 
@@ -5658,11 +5673,11 @@ void handle_mod(AsyncWebServerRequest *request)
 #endif
 
 		const char* dataType = "text/html";
-		AsyncWebServerResponse *response = request->beginResponse(200, "text/html", (const char *)html);
+		AsyncWebServerResponse *response = beginBufferResponse(request, html);
 		response->addHeader("MOD", "content");
 		response->addHeader("Cache-Control", "no-cache");
 		request->send(response);
-		free(html); // Free the allocated memory	
+		// html is freed when the request completes
 	}
 }
 
@@ -6866,11 +6881,11 @@ void handle_system(AsyncWebServerRequest *request)
 		strcat(html, "</form><br />");
 #endif
 
-		AsyncWebServerResponse *response = request->beginResponse(200, "text/html", (const char *)html);
+		AsyncWebServerResponse *response = beginBufferResponse(request, html);
 		response->addHeader("System", "content");
 		response->addHeader("Cache-Control", "no-cache");
 		request->send(response);
-		free(html);
+		// html is freed when the request completes
 	}
 }
 
@@ -7860,11 +7875,11 @@ void handle_igate(AsyncWebServerRequest *request)
 		strcat(html, "</td></tr></table><br />\n");
 		strcat(html, "</form><br />");
 
-		AsyncWebServerResponse *response = request->beginResponse(200, "text/html", (const char *)html);
+		AsyncWebServerResponse *response = beginBufferResponse(request, html);
 		response->addHeader("IGATE", "content");
 		response->addHeader("Cache-Control", "no-cache");
 		request->send(response);
-		free(html); // Free the allocated memory
+		// html is freed when the request completes
 	}
 }
 
@@ -8666,11 +8681,11 @@ void handle_digi(AsyncWebServerRequest *request)
 		strcat(html, "</td></tr></table><br />\n");
 		strcat(html, "</form><br />");
 
-		AsyncWebServerResponse *response = request->beginResponse(200, "text/html", (const char *)html);
+		AsyncWebServerResponse *response = beginBufferResponse(request, html);
 		response->addHeader("digi", "content");
 		response->addHeader("Cache-Control", "no-cache");
 		request->send(response);
-		free(html); // Free the allocated memory
+		// html is freed when the request completes
 	}
 }
 
@@ -9112,11 +9127,11 @@ void handle_wx(AsyncWebServerRequest *request)
 		strcat(html, "</td></tr></table><br />\n");
 		strcat(html, "</form><br />");
 
-		AsyncWebServerResponse *response = request->beginResponse(200, "text/html", (const char *)html);
+		AsyncWebServerResponse *response = beginBufferResponse(request, html);
 		response->addHeader("Weather", "content");
 		response->addHeader("Cache-Control", "no-cache");
 		request->send(response);
-		free(html); // Free the allocated memory
+		// html is freed when the request completes
 	}
 }
 
@@ -9631,11 +9646,11 @@ void handle_tlm(AsyncWebServerRequest *request)
 		strcat(html, "</td></tr></table><br />\n");
 		strcat(html, "</form><br />");
 
-		AsyncWebServerResponse *response = request->beginResponse(200, "text/html", (const char *)html);
+		AsyncWebServerResponse *response = beginBufferResponse(request, html);
 		response->addHeader("Telemetry", "content");
 		response->addHeader("Cache-Control", "no-cache");
 		request->send(response);
-		free(html); // Free the allocated memory
+		// html is freed when the request completes
 	}
 }
 
@@ -10054,11 +10069,11 @@ void handle_sensor(AsyncWebServerRequest *request)
 
 		strcat(html, "</script>\n");
 
-		AsyncWebServerResponse *response = request->beginResponse(200, "text/html", (const char *)html);
+		AsyncWebServerResponse *response = beginBufferResponse(request, html);
 		response->addHeader("Sensor", "content");
 		response->addHeader("Cache-Control", "no-cache");
 		request->send(response);
-		free(html); // Free the allocated memory
+		// html is freed when the request completes
 	}
 }
 
@@ -10833,11 +10848,11 @@ void handle_tracker(AsyncWebServerRequest *request)
 	strcat(html, "</td></tr></table><br />\n");
 	strcat(html, "</form><br />");
 
-	AsyncWebServerResponse *response = request->beginResponse(200, "text/html", (const char *)html);
+	AsyncWebServerResponse *response = beginBufferResponse(request, html);
 	response->addHeader("Tracker", "content");
 	response->addHeader("Cache-Control", "no-cache");
 	request->send(response);
-	free(html); // Free the allocated memory	
+	// html is freed when the request completes
 }
 
 void handle_wireless(AsyncWebServerRequest *request)
@@ -11252,11 +11267,11 @@ void handle_wireless(AsyncWebServerRequest *request)
 		strcat(html, "</form>");
 #endif
 
-	AsyncWebServerResponse *response = request->beginResponse(200, "text/html", (const char *)html);
+	AsyncWebServerResponse *response = beginBufferResponse(request, html);
 	response->addHeader("wifi", "content");
 	response->addHeader("Cache-Control", "no-cache");
 	request->send(response);
-	free(html); // Free the allocated memory
+	// html is freed when the request completes
 
 	}
 }
@@ -11479,11 +11494,11 @@ void handle_test(AsyncWebServerRequest *request)
 
 	strcat(webString, "</body></html>\n");
 
-	AsyncWebServerResponse *response = request->beginResponse(200, "text/html", (const char *)webString);
+	AsyncWebServerResponse *response = beginBufferResponse(request, webString);
 	response->addHeader("Test", "content");
 	response->addHeader("Cache-Control", "no-cache");
 	request->send(response);
-	free(webString); // Free the allocated memory
+	// webString is freed when the request completes
 }
 
 static void ota_url_task(void *pvParameters)
@@ -11951,11 +11966,11 @@ void handle_about(AsyncWebServerRequest *request)
 #endif
 	strcat(webString, "</body></html>\n");
 
-	AsyncWebServerResponse *response = request->beginResponse(200, "text/html", (const char *)webString);
+	AsyncWebServerResponse *response = beginBufferResponse(request, webString);
 	response->addHeader("About", "content");
 	response->addHeader("Cache-Control", "no-cache");
 	request->send(response);
-	free(webString);
+	// webString is freed when the request completes
 }
 
 void handle_gnss(AsyncWebServerRequest *request)
@@ -12097,11 +12112,11 @@ void handle_gnss(AsyncWebServerRequest *request)
 
 	strcat(webString, "</body></html>\n");
 
-	AsyncWebServerResponse *response = request->beginResponse(200, "text/html", (const char *)webString);
+	AsyncWebServerResponse *response = beginBufferResponse(request, webString);
 	response->addHeader("GNSS", "content");
 	response->addHeader("Cache-Control", "no-cache");
 	request->send(response);
-	free(webString);
+	// webString is freed when the request completes
 }
 
 void handle_default()
