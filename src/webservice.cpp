@@ -11986,9 +11986,11 @@ void handle_about(AsyncWebServerRequest *request)
 					  "return xhr;"
 					  "},"
 					  "success:function(d, s) {"
-					  "alert('Wait for system reboot 10sec');"
+					  "alert(d + '\\nWait about 20 s, then reconnect and check the version in the sidebar.');"
 					  "},"
 					  "error: function (a, b, c) {"
+					  "document.getElementById('update_sumbit').disabled = false;"
+					  "alert('Firmware update ' + (a.responseText ? a.responseText : ('failed: ' + b + ' ' + c)));"
 					  "}"
 					  "});"
 					  "});"
@@ -12322,9 +12324,17 @@ void webService()
 	async_server.on(
 		"/update", HTTP_POST, [](AsyncWebServerRequest *request)
 		{
-  		bool espShouldReboot = !Update.hasError();
-  		AsyncWebServerResponse *response = request->beginResponse(200, "text/html", espShouldReboot ? "<h1><strong>Update DONE</strong></h1><br><a href='/'>Return Home</a>" : "<h1><strong>Update FAILED</strong></h1><br><a href='/updt'>Retry?</a>");
+  		bool espShouldReboot = !Update.hasError() && Update.isFinished();
+  		// SM0TGY: report the real result so a failed OTA is visible in the browser
+  		char otaMsg[200];
+  		if (espShouldReboot)
+  			snprintf(otaMsg, sizeof(otaMsg), "OK: firmware written (%u bytes). Restarting.", (unsigned)Update.progress());
+  		else
+  			snprintf(otaMsg, sizeof(otaMsg), "FAILED: %s (error %u, written %u of %u bytes). Old firmware still running.", Update.errorString(), (unsigned)Update.getError(), (unsigned)Update.progress(), (unsigned)Update.size());
+  		AsyncWebServerResponse *response = request->beginResponse(espShouldReboot ? 200 : 500, "text/plain", otaMsg);
   		response->addHeader("Connection", "close");
+  		if (espShouldReboot)
+  			request->onDisconnect([]() { delay(200); esp_restart(); });
   		request->send(response); },
 		[](AsyncWebServerRequest *request, String filename, size_t index, uint8_t *data, size_t len, bool final)
 		{
@@ -12362,9 +12372,8 @@ void webService()
 			{
 				if (Update.end(true))
 				{
+					// Restart after the result has been sent (see onDisconnect above)
 					log_d("Update Success: %uByte\n", index + len);
-					delay(1000);
-					esp_restart();
 				}
 				else
 				{
