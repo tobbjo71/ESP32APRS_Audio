@@ -1640,8 +1640,8 @@ void defaultConfig()
         config.wifi_sta[i].wifi_ssid[0] = 0;
         config.wifi_sta[i].wifi_pass[0] = 0;
     }
-    sprintf(config.wifi_ap_ssid, "ESP32APRS_Audio");
-    sprintf(config.wifi_ap_pass, "aprsthnetwork");
+    strlcpy(config.wifi_ap_ssid, DEFAULT_AP_SSID, sizeof(config.wifi_ap_ssid));
+    strlcpy(config.wifi_ap_pass, DEFAULT_AP_PASS, sizeof(config.wifi_ap_pass));
 
     // Blutooth
     config.bt_slave = false;
@@ -1951,8 +1951,8 @@ config.oled_enable = true;
     sprintf(config.wg_public_key, "");
     sprintf(config.wg_private_key, "");
 
-    sprintf(config.http_username, "admin");
-    sprintf(config.http_password, "admin");
+    strlcpy(config.http_username, DEFAULT_HTTP_USER, sizeof(config.http_username));
+    strlcpy(config.http_password, DEFAULT_HTTP_PASS, sizeof(config.http_password));
 
     // config.gnss_baudrate = 9600;
     #ifdef TTGO_TWR

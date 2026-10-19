@@ -23,6 +23,25 @@
 #define BT_USE_BLE 0
 #endif
 
+// Default access credentials, used only when no configuration is saved (first boot
+// or after Erase Flash). Put your own values in include/local_secrets.h, which is
+// in .gitignore so the values never reach the public repository.
+#if __has_include("local_secrets.h")
+#include "local_secrets.h"
+#endif
+#ifndef DEFAULT_AP_SSID
+#define DEFAULT_AP_SSID "ESP32APRS_Audio"
+#endif
+#ifndef DEFAULT_AP_PASS
+#define DEFAULT_AP_PASS "aprsthnetwork"
+#endif
+#ifndef DEFAULT_HTTP_USER
+#define DEFAULT_HTTP_USER "admin"
+#endif
+#ifndef DEFAULT_HTTP_PASS
+#define DEFAULT_HTTP_PASS "admin"
+#endif
+
 #define COMMENT_SIZE 25
 #define STATUS_SIZE 50
 
