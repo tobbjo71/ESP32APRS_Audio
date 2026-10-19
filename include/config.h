@@ -12,7 +12,7 @@
 #define CONFIG_H
 
 // SM0TGY fork firmware version (common reference). Bump for every build handed out.
-#define FORK_VERSION "1.2"
+#define FORK_VERSION "1.3"
 
 #include <Arduino.h>
 #include "sensor.h"
@@ -123,6 +123,7 @@ typedef struct wifi_struct
 typedef struct Config_Struct
 {
 	float timeZone;
+	bool tz_dst; // EU summer time (last Sunday March - last Sunday October, 01:00 UTC)
 	bool synctime;
 	bool title;
 

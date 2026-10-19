@@ -464,4 +464,8 @@ void sensorDisp();
 void convertSecondsToDHMS(char *dmhs,unsigned long totalSeconds);
 void wifiConnection();
 
+const char *tzPosixString();
+void applyTimeZone();
+float tzOffsetNow();
+
 #endif
