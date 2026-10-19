@@ -41,6 +41,19 @@
 #ifndef DEFAULT_HTTP_PASS
 #define DEFAULT_HTTP_PASS "admin"
 #endif
+// Station defaults (SM0TGY, Sweden). Position = centre of locator JO89RC.
+#ifndef DEFAULT_MYCALL
+#define DEFAULT_MYCALL "SM0TGY"
+#endif
+#ifndef DEFAULT_LAT
+#define DEFAULT_LAT 59.1042
+#endif
+#ifndef DEFAULT_LON
+#define DEFAULT_LON 17.4583
+#endif
+#ifndef DEFAULT_HOSTNAME
+#define DEFAULT_HOSTNAME "SM0TGY-APRSTracker"
+#endif
 
 #define COMMENT_SIZE 25
 #define STATUS_SIZE 50
