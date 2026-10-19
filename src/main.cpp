@@ -6311,7 +6311,7 @@ void taskGPS(void *pvParameters)
             {
                 if (gps.time.isUpdated())
                 {
-                    if (gnssTimeInterval > millis())
+                    if (millis() > gnssTimeInterval) // was inverted: GPS time was never applied
                     {
                         gnssTimeInterval = millis() + 10000;
                         time_t nowTime;
