@@ -14,6 +14,7 @@
 #include <LibAPRSesp.h>
 #include <parse_aprs.h>
 #include "jquery_min_js.h"
+#include "aprs_symbols.h"
 #include <ESPCPUTemp.h>
 #include "esp_wifi.h"
 #include "esp_heap_caps.h"
@@ -236,7 +237,6 @@ void setMainPage(AsyncWebServerRequest *request)
 	strcat(webString, "<meta name=\"KeyWords\" content=\"ESP32,ESP32C3,AFSK,APRS\" />\n");
 	strcat(webString, "<meta http-equiv=\"Cache-Control\" content=\"no-cache, no-store, must-revalidate\" />\n");
 	strcat(webString, "<meta http-equiv=\"pragma\" content=\"no-cache\" />\n");
-	strcat(webString, "<link rel=\"shortcut icon\" href=\"http://aprs.nakhonthai.net/favicon.ico\" type=\"image/x-icon\" />\n");
 	strcat(webString, "<meta http-equiv=\"Expires\" content=\"0\" />\n");
 
 	char temp_buffer[512];
@@ -271,6 +271,9 @@ void setMainPage(AsyncWebServerRequest *request)
 	strcat(webString, "$(\"#contentmain\").load(\"/digi\");\n");
 	strcat(webString, "} else if (tabName == 'TRACKER') {\n");
 	strcat(webString, "$(\"#contentmain\").load(\"/tracker\");\n");
+	strcat(webString, "} else if (tabName == 'GNSS') {\n");
+	strcat(webString, "$(\"#contentmain\").load(\"/gnss\");\n");
+#ifndef FORK_SLIM
 	strcat(webString, "} else if (tabName == 'WX') {\n");
 	strcat(webString, "$(\"#contentmain\").load(\"/wx\");\n");
 	strcat(webString, "} else if (tabName == 'TLM') {\n");
@@ -279,6 +282,7 @@ void setMainPage(AsyncWebServerRequest *request)
 	strcat(webString, "$(\"#contentmain\").load(\"/sensor\");\n");
 	strcat(webString, "} else if (tabName == 'VPN') {\n");
 	strcat(webString, "$(\"#contentmain\").load(\"/vpn\");\n");
+#endif // FORK_SLIM
 #ifdef MQTT
 	strcat(webString, "} else if (tabName == 'MQTT') {\n");
 	strcat(webString, "$(\"#contentmain\").load(\"/mqtt\");\n");
@@ -364,7 +368,7 @@ void setMainPage(AsyncWebServerRequest *request)
 	strcat(webString, "const tr = document.createElement(\"tr\");\n");
 	strcat(webString, "tr.innerHTML = `\n");
 	strcat(webString, "<td>${row.time}</td>\n");
-	strcat(webString, "<td><img src=\"http://aprs.nakhonthai.net/symbols/icons/${row.icon}\"></td>\n");
+	strcat(webString, "<td><img src=\"/symbols/icons/${row.icon}\"></td>\n");
 	strcat(webString, "<td>${row.callsign}</td>\n");
 	strcat(webString, "<td align=\"left\">${row.path}</td>\n");
 	strcat(webString, "<td>${row.dx !== null ? row.dx : \"-\"}</td>\n");
@@ -425,10 +429,13 @@ void setMainPage(AsyncWebServerRequest *request)
 	strcat(webString, "<button class=\"nav-tabs\" onclick=\"selectTab(event, 'IGATE')\">IGATE</button>\n");
 	strcat(webString, "<button class=\"nav-tabs\" onclick=\"selectTab(event, 'DIGI')\">DIGI</button>\n");
 	strcat(webString, "<button class=\"nav-tabs\" onclick=\"selectTab(event, 'TRACKER')\">TRACKER</button>\n");
+	strcat(webString, "<button class=\"nav-tabs\" onclick=\"selectTab(event, 'GNSS')\">GNSS</button>\n");
+#ifndef FORK_SLIM
 	strcat(webString, "<button class=\"nav-tabs\" onclick=\"selectTab(event, 'WX')\">WX</button>\n");
 	strcat(webString, "<button class=\"nav-tabs\" onclick=\"selectTab(event, 'TLM')\">TLM</button>\n");
 	strcat(webString, "<button class=\"nav-tabs\" onclick=\"selectTab(event, 'SENSOR')\">SENSOR</button>\n");
 	strcat(webString, "<button class=\"nav-tabs\" onclick=\"selectTab(event, 'VPN')\">VPN</button>\n");
+#endif // FORK_SLIM
 #ifdef MQTT
 	strcat(webString, "<button class=\"nav-tabs\" onclick=\"selectTab(event, 'MQTT')\">MQTT</button>\n");
 #endif
@@ -550,7 +557,7 @@ void handle_dashboard(AsyncWebServerRequest *request)
 	// strcat(webString, "        const tr = document.createElement(\"tr\");\n");
 	// strcat(webString, "        tr.innerHTML = `\n");
 	// strcat(webString, "            <td>${row.time}</td>\n");
-	// strcat(webString, "            <td><img src=\\\"http://aprs.nakhonthai.net/symbols/icons/${row.icon}\\\"></td>\n");
+	// strcat(webString, "            <td><img src=\\\"/symbols/icons/${row.icon}\\\"></td>\n");
 	// strcat(webString, "            <td>${row.callsign}</td>\n");
 	// strcat(webString, "            <td>${row.path}</td>\n");
 	// strcat(webString, "            <td>${row.dx !== null ? row.dx + \\\" km\\\" : \\\"-\\\"}</td>\n");
@@ -984,6 +991,31 @@ void handle_sidebar(AsyncWebServerRequest *request)
 	// html is freed when the request completes
 }
 
+// Standard APRS symbol icons served from flash (aprs.fi set, github.com/hessu/aprs-symbols),
+// so pages work without internet. URL: /symbols/icons/<ascii>-<1|2>.png or dot.png
+void handle_symbol_icon(AsyncWebServerRequest *request)
+{
+	String name = request->url();
+	name = name.substring(name.lastIndexOf('/') + 1);
+	const uint8_t *ptr = aprs_sym_dot;
+	size_t len = sizeof(aprs_sym_dot);
+	int dash = name.indexOf('-');
+	if (dash > 0)
+	{
+		int code = name.substring(0, dash).toInt();
+		int table = name.substring(dash + 1).toInt();
+		if (code >= 33 && code <= 128 && (table == 1 || table == 2))
+		{
+			int idx = (table - 1) * 96 + (code - 33);
+			ptr = aprs_sym_data + pgm_read_dword(&aprs_sym_off[idx]);
+			len = pgm_read_word(&aprs_sym_len[idx]);
+		}
+	}
+	AsyncWebServerResponse *response = request->beginResponse_P(200, "image/png", ptr, len);
+	response->addHeader("Cache-Control", "max-age=86400");
+	request->send(response);
+}
+
 void handle_symbol(AsyncWebServerRequest *request)
 {
 	int i;
@@ -1012,11 +1044,11 @@ void handle_symbol(AsyncWebServerRequest *request)
 		for (i = 33; i < 129; i++)
 		{
 			memset(lnk, 0, sizeof(lnk));
-			//<td><img onclick="window.opener.setValue(113,2);" src="http://aprs.nakhonthai.net/symbols/icons/113-2.png"></td>
+			//<td><img onclick="window.opener.setValue(113,2);" src="/symbols/icons/113-2.png"></td>
 			if (sel == -1)
-				sprintf(lnk, "<td><img onclick=\"window.opener.setValue(%d,1);\" src=\"http://aprs.nakhonthai.net/symbols/icons/%d-1.png\"></td>", i, i);
+				sprintf(lnk, "<td><img onclick=\"window.opener.setValue(%d,1);\" src=\"/symbols/icons/%d-1.png\"></td>", i, i);
 			else
-				sprintf(lnk, "<td><img onclick=\"window.opener.setValue(%d,%d,1);\" src=\"http://aprs.nakhonthai.net/symbols/icons/%d-1.png\"></td>", sel, i, i);
+				sprintf(lnk, "<td><img onclick=\"window.opener.setValue(%d,%d,1);\" src=\"/symbols/icons/%d-1.png\"></td>", sel, i, i);
 			strcat(web, lnk);
 
 			if (((i % 16) == 0) && (i < 126))
@@ -1031,9 +1063,9 @@ void handle_symbol(AsyncWebServerRequest *request)
 		{
 			memset(lnk, 0, sizeof(lnk));
 			if (sel == -1)
-				sprintf(lnk, "<td><img onclick=\"window.opener.setValue(%d,2);\" src=\"http://aprs.nakhonthai.net/symbols/icons/%d-2.png\"></td>", i, i);
+				sprintf(lnk, "<td><img onclick=\"window.opener.setValue(%d,2);\" src=\"/symbols/icons/%d-2.png\"></td>", i, i);
 			else
-				sprintf(lnk, "<td><img onclick=\"window.opener.setValue(%d,%d,2);\" src=\"http://aprs.nakhonthai.net/symbols/icons/%d-2.png\"></td>", sel, i, i);
+				sprintf(lnk, "<td><img onclick=\"window.opener.setValue(%d,%d,2);\" src=\"/symbols/icons/%d-2.png\"></td>", sel, i, i);
 			strcat(web, lnk);
 			if (((i % 16) == 0) && (i < 126))
 				strcat(web, "</tr>\n<tr>\n");
@@ -1307,14 +1339,14 @@ void event_lastHeard(bool gethtml)
 							{
 								strcpy(fileImg, "dot.png");
 							}
-							//snprintf(temp_html, sizeof(temp_html), "<td><img src=\"http://aprs.nakhonthai.net/symbols/icons/%s\"></td>", fileImg);
+							//snprintf(temp_html, sizeof(temp_html), "<td><img src=\"/symbols/icons/%s\"></td>", fileImg);
 							snprintf(temp_html, sizeof(temp_html), "\"icon\":\"%s\",", fileImg);
 							strcat(html, temp_html);
 						}
 					}
 					else
 					{
-						//strcat(html, "<td><img src=\"http://aprs.nakhonthai.net/symbols/icons/dot.png\"></td>");
+						//strcat(html, "<td><img src=\"/symbols/icons/dot.png\"></td>");
 						strcat(html, "\"icon\":\"dot.png\",");
 					}
 					
@@ -2331,6 +2363,8 @@ void handle_radio(AsyncWebServerRequest *request)
 		strcat(html, "\n");
 		strcat(html, "}\n");
 		strcat(html, "</script>\n");
+		char temp_buffer[256];
+#ifndef FORK_SLIM
 		strcat(html, "<form id='formRadio' method=\"POST\" action='#' enctype='multipart/form-data'>\n");
 		strcat(html, "<table>\n");
 		strcat(html, "<th colspan=\"2\"><span><b>RF Analog Module</b></span></th>\n");
@@ -2338,7 +2372,7 @@ void handle_radio(AsyncWebServerRequest *request)
 		strcat(html, "<td align=\"right\"><b>Enable:</b></td>\n");
 
 		// Handle radio enable flag
-		char temp_buffer[256];
+
 		if (config.rf_en)
 		{
 			strcat(html, "<td style=\"text-align: left;\"><label class=\"switch\"><input type=\"checkbox\" name=\"radioEnable\" value=\"OK\" checked><span class=\"slider round\"></span></label></td>\n");
@@ -2519,6 +2553,7 @@ void handle_radio(AsyncWebServerRequest *request)
 		strcat(html, "<input type=\"hidden\" name=\"commitRadio\"/>\n");
 		strcat(html, "</td></tr></table><br />\n");
 		strcat(html, "</form>");
+#endif // FORK_SLIM
 
 		// AFSK,TNC Configuration
 		strcat(html, "<form id='formTNC' method=\"POST\" action='#' enctype='multipart/form-data'>\n");
@@ -2634,6 +2669,7 @@ void handle_radio(AsyncWebServerRequest *request)
 	}
 }
 
+#ifndef FORK_SLIM
 void handle_vpn(AsyncWebServerRequest *request)
 {
 	if (!request->authenticate(config.http_username, config.http_password))
@@ -2914,6 +2950,7 @@ void handle_vpn(AsyncWebServerRequest *request)
 		// html is freed when the request completes
 	}
 }
+#endif // FORK_SLIM
 
 #ifdef MQTT
 void handle_mqtt(AsyncWebServerRequest *request)
@@ -4505,12 +4542,14 @@ void handle_mod(AsyncWebServerRequest *request)
 		strcat(html, "<table style=\"text-align:unset;border-width:0px;background:unset\"><tr style=\"background:unset;vertical-align:top\"><td width=\"32%\" style=\"border:unset;\">\n");
 		// strcat(html, "<h2>System Setting</h2>\n");
 		/**************UART0(USB) Modify******************/
+		char enFlage[20] = "";
+#ifndef FORK_SLIM
 		strcat(html, "<form accept-charset=\"UTF-8\" action=\"#\" class=\"form-horizontal\" id=\"fromUART0\" method=\"post\">\n");
 		strcat(html, "<table>\n");
 		strcat(html, "<th colspan=\"2\"><span><b>UART0 Modify</b></span></th>\n");
 		strcat(html, "<tr>\n");
 
-		char enFlage[20] = "";
+
 		if (config.uart0_enable)
 			strcpy(enFlage, "checked");
 		strcat(html, "<td align=\"right\"><b>Enable</b></td>\n");
@@ -4596,6 +4635,7 @@ void handle_mod(AsyncWebServerRequest *request)
 		strcat(html, "</td></tr></table>\n");
 
 		strcat(html, "</form><br />\n");
+#endif // FORK_SLIM
 		strcat(html, "</td><td width=\"32%\" style=\"border:unset;\">");
 
 		/**************UART1 Modify******************/
@@ -4746,6 +4786,7 @@ void handle_mod(AsyncWebServerRequest *request)
 		strcat(html, "</td><td width=\"32%\" style=\"border:unset;\">");
 
 		/**************1-Wire Modify******************/
+#ifndef FORK_SLIM
 		strcat(html, "<form accept-charset=\"UTF-8\" action=\"#\" class=\"form-horizontal\" id=\"fromONEWIRE\" method=\"post\">\n");
 		strcat(html, "<table>\n");
 		strcat(html, "<th colspan=\"2\"><span><b>1-Wire Bus Modify</b></span></th>\n");
@@ -4782,6 +4823,7 @@ void handle_mod(AsyncWebServerRequest *request)
 		strcat(html, "<input type=\"hidden\" name=\"commitONEWIRE\"/>\n");
 		strcat(html, "</td></tr></table>\n");
 		strcat(html, "</form><br />\n");
+#endif // FORK_SLIM
 
 		strcat(html, "</td></tr></table>\n");
 
@@ -4978,6 +5020,7 @@ void handle_mod(AsyncWebServerRequest *request)
 		strcat(html, "</td><td width=\"23%\" style=\"border:unset;\">");
 
 		/**************I2C_0 Modify******************/
+#ifndef FORK_SLIM
 		strcat(html, "<form accept-charset=\"UTF-8\" action=\"#\" class=\"form-horizontal\" id=\"fromI2C0\" method=\"post\">\n");
 		strcat(html, "<table>\n");
 		strcat(html, "<th colspan=\"2\"><span><b>I2C_0(OLED) Modify</b></span></th>\n");
@@ -5040,8 +5083,10 @@ void handle_mod(AsyncWebServerRequest *request)
 		strcat(html, "<input type=\"hidden\" name=\"commitI2C0\"/>\n");
 		strcat(html, "</td></tr></table>\n");
 		strcat(html, "</form>\n");
+#endif // FORK_SLIM
 
 		/**************Counter_0 Modify******************/
+#ifndef FORK_SLIM
 		strcat(html, "<form accept-charset=\"UTF-8\" action=\"#\" class=\"form-horizontal\" id=\"fromCOUNTER0\" method=\"post\">\n");
 		strcat(html, "<table>\n");
 		strcat(html, "<th colspan=\"2\"><span><b>Counter_0 Modify</b></span></th>\n");
@@ -5094,9 +5139,11 @@ void handle_mod(AsyncWebServerRequest *request)
 		strcat(html, "<input type=\"hidden\" name=\"commitCOUNTER0\"/>\n");
 		strcat(html, "</td></tr></table>\n");
 		strcat(html, "</form>\n");
+#endif // FORK_SLIM
 
 		strcat(html, "</td><td width=\"23%\" style=\"border:unset;\">");
 		/**************I2C_1 Modify******************/
+#ifndef FORK_SLIM
 		strcat(html, "<form accept-charset=\"UTF-8\" action=\"#\" class=\"form-horizontal\" id=\"fromI2C1\" method=\"post\">\n");
 		strcat(html, "<table>\n");
 		strcat(html, "<th colspan=\"2\"><span><b>I2C_1 Modify</b></span></th>\n");
@@ -5159,8 +5206,10 @@ void handle_mod(AsyncWebServerRequest *request)
 		strcat(html, "<input type=\"hidden\" name=\"commitI2C1\"/>\n");
 		strcat(html, "</td></tr></table>\n");
 		strcat(html, "</form>\n");
+#endif // FORK_SLIM
 
 		/**************Counter_1 Modify******************/
+#ifndef FORK_SLIM
 		strcat(html, "<form accept-charset=\"UTF-8\" action=\"#\" class=\"form-horizontal\" id=\"fromCOUNTER1\" method=\"post\">\n");
 		strcat(html, "<table>\n");
 		strcat(html, "<th colspan=\"2\"><span><b>Counter_1 Modify</b></span></th>\n");
@@ -5213,6 +5262,7 @@ void handle_mod(AsyncWebServerRequest *request)
 		strcat(html, "<input type=\"hidden\" name=\"commitCOUNTER1\"/>\n");
 		strcat(html, "</td></tr></table>\n");
 		strcat(html, "</form>\n");
+#endif // FORK_SLIM
 
 		strcat(html, "</td></tr></table>\n");
 		strcat(html, "<br />\n");
@@ -5291,6 +5341,7 @@ void handle_mod(AsyncWebServerRequest *request)
 		strcat(html, "</td><td width=\"23%\" style=\"border:unset;\">\n");
 
 		/**************MODBUS Modify******************/
+#ifndef FORK_SLIM
 		strcat(html, "<form accept-charset=\"UTF-8\" action=\"#\" class=\"form-horizontal\" id=\"fromMODBUS\" method=\"post\">\n");
 		strcat(html, "<table>\n");
 		strcat(html, "<th colspan=\"2\"><span><b>MODBUS Modify</b></span></th>\n");
@@ -5361,10 +5412,12 @@ void handle_mod(AsyncWebServerRequest *request)
 		strcat(html, "<input type=\"hidden\" name=\"commitMODBUS\"/>\n");
 		strcat(html, "</td></tr></table>\n");
 		strcat(html, "</form>\n");
+#endif // FORK_SLIM
 
 		strcat(html, "</td><td width=\"23%\" style=\"border:unset;\">\n");
 
 		/**************External TNC Modify******************/
+#ifndef FORK_SLIM
 		strcat(html, "<form accept-charset=\"UTF-8\" action=\"#\" class=\"form-horizontal\" id=\"fromTNC\" method=\"post\">\n");
 		strcat(html, "<table>\n");
 		strcat(html, "<th colspan=\"2\"><span><b>External TNC Modify</b></span></th>\n");
@@ -5442,12 +5495,14 @@ void handle_mod(AsyncWebServerRequest *request)
 		strcat(html, "<input type=\"hidden\" name=\"commitTNC\"/>\n");
 		strcat(html, "</td></tr></table>\n");
 		strcat(html, "</form>\n");
+#endif // FORK_SLIM
 		strcat(html, "</td></tr></table>\n");
 		strcat(html, "<br />\n");
 
 		strcat(html, "<table style=\"text-align:unset;border-width:0px;background:unset\"><tr style=\"background:unset;vertical-align:top\"><td width=\"50%\" style=\"border:unset;vertical-align:top\">\n");
 
 		/************************ AT-COMMAND **************************/
+#ifndef FORK_SLIM
 		strcat(html, "<form id='formATCommand' method=\"POST\" action='#' enctype='multipart/form-data'>\n");
 		strcat(html, "<table>\n");
 		strcat(html, "<th colspan=\"2\"><span><b>AT-COMMAND CHANNEL</b></span></th>\n");
@@ -5513,6 +5568,7 @@ void handle_mod(AsyncWebServerRequest *request)
 		strcat(html, "<input type=\"hidden\" name=\"commitCMD\"/>\n");
 		strcat(html, "</td></tr></table><br />\n");
 		strcat(html, "</form><br />\n");
+#endif // FORK_SLIM
 
 #ifdef PPPOS
 		strcat(html, "<br />\n");
@@ -7449,7 +7505,7 @@ void handle_igate(AsyncWebServerRequest *request)
 		strcat(html, "document.getElementById('igateSymbol').value = String.fromCharCode(symbol);\n");
 		strcat(html, "if(table==1){\n document.getElementById('igateTable').value='/';\n");
 		strcat(html, "}else if(table==2){\n document.getElementById('igateTable').value='\\\\';\n}\n");
-		strcat(html, "document.getElementById('igateImgSymbol').src = \"http://aprs.nakhonthai.net/symbols/icons/\"+symbol.toString()+'-'+table.toString()+'.png';\n");
+		strcat(html, "document.getElementById('igateImgSymbol').src = \"/symbols/icons/\"+symbol.toString()+'-'+table.toString()+'.png';\n");
 		strcat(html, "\n}\n");
 		strcat(html, "function calculatePHGR(){document.forms.formIgate.texttouse.value=\"PHG\"+calcPower(document.forms.formIgate.power.value)+calcHeight(document.forms.formIgate.haat.value)+calcGain(document.forms.formIgate.gain.value)+calcDirection(document.forms.formIgate.direction.selectedIndex)}function Log2(e){return Math.log(e)/Math.log(2)}function calcPerHour(e){return e<10?e:String.fromCharCode(65+(e-10))}function calcHeight(e){return String.fromCharCode(48+Math.round(Log2(e/10),0))}function calcPower(e){if(e<1)return 0;if(e>=1&&e<4)return 1;if(e>=4&&e<9)return 2;if(e>=9&&e<16)return 3;if(e>=16&&e<25)return 4;if(e>=25&&e<36)return 5;if(e>=36&&e<49)return 6;if(e>=49&&e<64)return 7;if(e>=64&&e<81)return 8;if(e>=81)return 9}function calcDirection(e){if(e==\"0\")return\"0\";if(e==\"1\")return\"1\";if(e==\"2\")return\"2\";if(e==\"3\")return\"3\";if(e==\"4\")return\"4\";if(e==\"5\")return\"5\";if(e==\"6\")return\"6\";if(e==\"7\")return\"7\";if(e==\"8\")return\"8\"}function calcGain(e){return e>9?\"9\":e<0?\"0\":Math.round(e,0)}\n");
 		strcat(html, "function onRF2INETCheck() {\n");
@@ -7530,7 +7586,7 @@ void handle_igate(AsyncWebServerRequest *request)
 			table = "1";
 		if (config.igate_symbol[0] == 92)
 			table = "2";
-		snprintf(tempHtml, sizeof(tempHtml), "<td style=\"text-align: left;\">Table:<input maxlength=\"1\" size=\"1\" id=\"igateTable\" name=\"igateTable\" type=\"text\" value=\"%c\" style=\"background-color: rgb(97, 239, 170);\" /> Symbol:<input maxlength=\"1\" size=\"1\" id=\"igateSymbol\" name=\"igateSymbol\" type=\"text\" value=\"%c\" style=\"background-color: rgb(97, 239, 170);\" /> <img border=\"1\" style=\"vertical-align: middle;\" id=\"igateImgSymbol\" onclick=\"openWindowSymbol();\" src=\"http://aprs.nakhonthai.net/symbols/icons/%d-%s.png\"> <i>*Click icon for select symbol</i></td>\n",
+		snprintf(tempHtml, sizeof(tempHtml), "<td style=\"text-align: left;\">Table:<input maxlength=\"1\" size=\"1\" id=\"igateTable\" name=\"igateTable\" type=\"text\" value=\"%c\" style=\"background-color: rgb(97, 239, 170);\" /> Symbol:<input maxlength=\"1\" size=\"1\" id=\"igateSymbol\" name=\"igateSymbol\" type=\"text\" value=\"%c\" style=\"background-color: rgb(97, 239, 170);\" /> <img border=\"1\" style=\"vertical-align: middle;\" id=\"igateImgSymbol\" onclick=\"openWindowSymbol();\" src=\"/symbols/icons/%d-%s.png\"> <i>*Click icon for select symbol</i></td>\n",
 						 config.igate_symbol[0], config.igate_symbol[1], (int)config.igate_symbol[1], table);
 		strcat(html, tempHtml);
 		strcat(html, "</tr>\n");
@@ -8342,7 +8398,7 @@ void handle_digi(AsyncWebServerRequest *request)
 		strcat(html, "document.getElementById('digiSymbol').value = String.fromCharCode(symbol);\n");
 		strcat(html, "if(table==1){\n document.getElementById('digiTable').value='/';\n");
 		strcat(html, "}else if(table==2){\n document.getElementById('digiTable').value='\\\\';\n}\n");
-		strcat(html, "document.getElementById('digiImgSymbol').src = \"http://aprs.nakhonthai.net/symbols/icons/\"+symbol.toString()+'-'+table.toString()+'.png';\n");
+		strcat(html, "document.getElementById('digiImgSymbol').src = \"/symbols/icons/\"+symbol.toString()+'-'+table.toString()+'.png';\n");
 		strcat(html, "\n}\n");
 		strcat(html, "function calculatePHGR(){document.forms.formDIGI.texttouse.value=\"PHG\"+calcPower(document.forms.formDIGI.power.value)+calcHeight(document.forms.formDIGI.haat.value)+calcGain(document.forms.formDIGI.gain.value)+calcDirection(document.forms.formDIGI.direction.selectedIndex)}function Log2(e){return Math.log(e)/Math.log(2)}function calcPerHour(e){return e<10?e:String.fromCharCode(65+(e-10))}function calcHeight(e){return String.fromCharCode(48+Math.round(Log2(e/10),0))}function calcPower(e){if(e<1)return 0;if(e>=1&&e<4)return 1;if(e>=4&&e<9)return 2;if(e>=9&&e<16)return 3;if(e>=16&&e<25)return 4;if(e>=25&&e<36)return 5;if(e>=36&&e<49)return 6;if(e>=49&&e<64)return 7;if(e>=64&&e<81)return 8;if(e>=81)return 9}function calcDirection(e){if(e==\"0\")return\"0\";if(e==\"1\")return\"1\";if(e==\"2\")return\"2\";if(e==\"3\")return\"3\";if(e==\"4\")return\"4\";if(e==\"5\")return\"5\";if(e==\"6\")return\"6\";if(e==\"7\")return\"7\";if(e==\"8\")return\"8\"}function calcGain(e){return e>9?\"9\":e<0?\"0\":Math.round(e,0)}\n");
 		strcat(html, "function selPrecision(idx) {\n");
@@ -8418,7 +8474,7 @@ void handle_digi(AsyncWebServerRequest *request)
 			strcpy(table, "1");
 		if (config.digi_symbol[0] == 92)
 			strcpy(table, "2");
-		snprintf(tempHtml, sizeof(tempHtml), "<td style=\"text-align: left;\">Table:<input maxlength=\"1\" size=\"1\" id=\"digiTable\" name=\"digiTable\" type=\"text\" value=\"%c\" style=\"background-color: rgb(97, 239, 170);\" /> Symbol:<input maxlength=\"1\" size=\"1\" id=\"digiSymbol\" name=\"digiSymbol\" type=\"text\" value=\"%c\" style=\"background-color: rgb(97, 239, 170);\" /> <img border=\"1\" style=\"vertical-align: middle;\" id=\"digiImgSymbol\" onclick=\"openWindowSymbol();\" src=\"http://aprs.nakhonthai.net/symbols/icons/%d-%s.png\"> <i>*Click icon for select symbol</i></td>\n",
+		snprintf(tempHtml, sizeof(tempHtml), "<td style=\"text-align: left;\">Table:<input maxlength=\"1\" size=\"1\" id=\"digiTable\" name=\"digiTable\" type=\"text\" value=\"%c\" style=\"background-color: rgb(97, 239, 170);\" /> Symbol:<input maxlength=\"1\" size=\"1\" id=\"digiSymbol\" name=\"digiSymbol\" type=\"text\" value=\"%c\" style=\"background-color: rgb(97, 239, 170);\" /> <img border=\"1\" style=\"vertical-align: middle;\" id=\"digiImgSymbol\" onclick=\"openWindowSymbol();\" src=\"/symbols/icons/%d-%s.png\"> <i>*Click icon for select symbol</i></td>\n",
 				 config.digi_symbol[0], config.digi_symbol[1], (int)config.digi_symbol[1], table);
 		strcat(html, tempHtml);
 
@@ -8698,6 +8754,7 @@ void handle_digi(AsyncWebServerRequest *request)
 	}
 }
 
+#ifndef FORK_SLIM
 void handle_wx(AsyncWebServerRequest *request)
 {
 	if (!request->authenticate(config.http_username, config.http_password))
@@ -9143,7 +9200,9 @@ void handle_wx(AsyncWebServerRequest *request)
 		// html is freed when the request completes
 	}
 }
+#endif // FORK_SLIM
 
+#ifndef FORK_SLIM
 void handle_tlm(AsyncWebServerRequest *request)
 {
 	if (!request->authenticate(config.http_username, config.http_password))
@@ -9662,9 +9721,11 @@ void handle_tlm(AsyncWebServerRequest *request)
 		// html is freed when the request completes
 	}
 }
+#endif // FORK_SLIM
 
 extern TaskHandle_t taskSensorHandle;
 
+#ifndef FORK_SLIM
 void handle_sensor(AsyncWebServerRequest *request)
 {
 	if (!request->authenticate(config.http_username, config.http_password))
@@ -10085,6 +10146,7 @@ void handle_sensor(AsyncWebServerRequest *request)
 		// html is freed when the request completes
 	}
 }
+#endif // FORK_SLIM
 
 void handle_tracker(AsyncWebServerRequest *request)
 {
@@ -10534,7 +10596,7 @@ void handle_tracker(AsyncWebServerRequest *request)
 	strcat(html, "txtsymbol.value = String.fromCharCode(symbol);\n");
 	strcat(html, "if(table==1){\n txttable.value='/';\n");
 	strcat(html, "}else if(table==2){\n txttable.value='\\\\';\n}\n");
-	strcat(html, "imgicon.src = \"http://aprs.nakhonthai.net/symbols/icons/\"+symbol.toString()+'-'+table.toString()+'.png';\n");
+	strcat(html, "imgicon.src = \"/symbols/icons/\"+symbol.toString()+'-'+table.toString()+'.png';\n");
 	strcat(html, "\n}\n");
 	strcat(html, "function onSmartCheck() {\n");
 	strcat(html, "if (document.querySelector('#smartBcnEnable').checked) {\n");
@@ -10735,7 +10797,7 @@ void handle_tracker(AsyncWebServerRequest *request)
 		strcpy(table, "1");
 	if (config.trk_symbol[0] == 92)
 		strcpy(table, "2");
-	snprintf(tempHtml, sizeof(tempHtml), "<td style=\"text-align: left;\">Table:<input maxlength=\"1\" size=\"1\" id=\"trackerTable\" name=\"trackerTable\" type=\"text\" value=\"%c\" style=\"background-color: rgb(97, 239, 170);\" /> Symbol:<input maxlength=\"1\" size=\"1\" id=\"trackerSymbol\" name=\"trackerSymbol\" type=\"text\" value=\"%c\" style=\"background-color: rgb(97, 239, 170);\" /> <img border=\"1\" style=\"vertical-align: middle;\" id=\"trackerImgSymbol\" onclick=\"openWindowSymbol(0);\" src=\"http://aprs.nakhonthai.net/symbols/icons/%d-%s.png\"> <i>*Click icon for select symbol</i></td>\n",
+	snprintf(tempHtml, sizeof(tempHtml), "<td style=\"text-align: left;\">Table:<input maxlength=\"1\" size=\"1\" id=\"trackerTable\" name=\"trackerTable\" type=\"text\" value=\"%c\" style=\"background-color: rgb(97, 239, 170);\" /> Symbol:<input maxlength=\"1\" size=\"1\" id=\"trackerSymbol\" name=\"trackerSymbol\" type=\"text\" value=\"%c\" style=\"background-color: rgb(97, 239, 170);\" /> <img border=\"1\" style=\"vertical-align: middle;\" id=\"trackerImgSymbol\" onclick=\"openWindowSymbol(0);\" src=\"/symbols/icons/%d-%s.png\"> <i>*Click icon for select symbol</i></td>\n",
 			 config.trk_symbol[0], config.trk_symbol[1], (int)config.trk_symbol[1], table);
 	strcat(html, tempHtml);
 	strcat(html, "</tr>\n");
@@ -10763,7 +10825,7 @@ void handle_tracker(AsyncWebServerRequest *request)
 		strcpy(table, "1");
 	if (config.trk_symmove[0] == 92)
 		strcpy(table, "2");
-	snprintf(tempHtml, sizeof(tempHtml), "<td style=\"text-align: left;\">Table:<input maxlength=\"1\" size=\"1\" id=\"moveTable\" name=\"moveTable\" type=\"text\" value=\"%c\" style=\"background-color: rgb(97, 239, 170);\" /> Symbol:<input maxlength=\"1\" size=\"1\" id=\"moveSymbol\" name=\"moveSymbol\" type=\"text\" value=\"%c\" style=\"background-color: rgb(97, 239, 170);\" /> <img border=\"1\" style=\"vertical-align: middle;\" id=\"moveImgSymbol\" onclick=\"openWindowSymbol(1);\" src=\"http://aprs.nakhonthai.net/symbols/icons/%d-%s.png\"> <i>*Click icon for select MOVE symbol</i></td>\n",
+	snprintf(tempHtml, sizeof(tempHtml), "<td style=\"text-align: left;\">Table:<input maxlength=\"1\" size=\"1\" id=\"moveTable\" name=\"moveTable\" type=\"text\" value=\"%c\" style=\"background-color: rgb(97, 239, 170);\" /> Symbol:<input maxlength=\"1\" size=\"1\" id=\"moveSymbol\" name=\"moveSymbol\" type=\"text\" value=\"%c\" style=\"background-color: rgb(97, 239, 170);\" /> <img border=\"1\" style=\"vertical-align: middle;\" id=\"moveImgSymbol\" onclick=\"openWindowSymbol(1);\" src=\"/symbols/icons/%d-%s.png\"> <i>*Click icon for select MOVE symbol</i></td>\n",
 			 config.trk_symmove[0], config.trk_symmove[1], (int)config.trk_symmove[1], table);
 	strcat(html, tempHtml);
 	strcat(html, "</tr>\n");
@@ -10774,7 +10836,7 @@ void handle_tracker(AsyncWebServerRequest *request)
 		strcpy(table, "1");
 	if (config.trk_symstop[0] == 92)
 		strcpy(table, "2");
-	snprintf(tempHtml, sizeof(tempHtml), "<td style=\"text-align: left;\">Table:<input maxlength=\"1\" size=\"1\" id=\"stopTable\" name=\"stopTable\" type=\"text\" value=\"%c\" style=\"background-color: rgb(97, 239, 170);\" /> Symbol:<input maxlength=\"1\" size=\"1\" id=\"stopSymbol\" name=\"stopSymbol\" type=\"text\" value=\"%c\" style=\"background-color: rgb(97, 239, 170);\" /> <img border=\"1\" style=\"vertical-align: middle;\" id=\"stopImgSymbol\" onclick=\"openWindowSymbol(2);\" src=\"http://aprs.nakhonthai.net/symbols/icons/%d-%s.png\"> <i>*Click icon for select STOP symbol</i></td>\n",
+	snprintf(tempHtml, sizeof(tempHtml), "<td style=\"text-align: left;\">Table:<input maxlength=\"1\" size=\"1\" id=\"stopTable\" name=\"stopTable\" type=\"text\" value=\"%c\" style=\"background-color: rgb(97, 239, 170);\" /> Symbol:<input maxlength=\"1\" size=\"1\" id=\"stopSymbol\" name=\"stopSymbol\" type=\"text\" value=\"%c\" style=\"background-color: rgb(97, 239, 170);\" /> <img border=\"1\" style=\"vertical-align: middle;\" id=\"stopImgSymbol\" onclick=\"openWindowSymbol(2);\" src=\"/symbols/icons/%d-%s.png\"> <i>*Click icon for select STOP symbol</i></td>\n",
 			 config.trk_symstop[0], config.trk_symstop[1], (int)config.trk_symstop[1], table);
 	strcat(html, tempHtml);
 	strcat(html, "</tr>\n");
@@ -11447,57 +11509,20 @@ void handle_test(AsyncWebServerRequest *request)
 		request->send(500, "text/html", "Memory allocation failed");
 		return;
 	}
-	strcpy(webString, "<html>\n<head>\n");
-	strcat(webString, "<script src=\"https://apps.bdimg.com/libs/jquery/2.1.4/jquery.min.js\"></script>\n");
-	strcat(webString, "<script src=\"https://code.highcharts.com/highcharts.js\"></script>\n");
-	strcat(webString, "<script src=\"https://code.highcharts.com/highcharts-more.js\"></script>\n");
-	strcat(webString, "<script language=\"JavaScript\">");
-	strcat(webString, "$(document).ready(function() {\nvar chart = {\ntype: 'gauge',plotBorderWidth: 1,plotBackgroundColor: {linearGradient: { x1: 0, y1: 0, x2: 0, y2: 1 },stops: [[0, '#FFFFC6'],[0.3, '#FFFFFF'],[1, '#FFF4C6']]},plotBackgroundImage: null,height: 200};\n");
-	strcat(webString, "var credits = {enabled: false};\n");
-	strcat(webString, "var title = {text: 'RX/AUDIO VU Meter'};\n");
-	strcat(webString, "var pane = [{startAngle: -45,endAngle: 45,background: null,center: ['50%', '145%'],size: 300}];\n");
-	strcat(webString, "var yAxis = [{min: -40,max: 1,minorTickPosition: 'outside',tickPosition: 'outside',labels: {rotation: 'auto',distance: 20},\n");
-	strcat(webString, "plotBands: [{from: -10,to: 1,color: '#C02316',innerRadius: '100%',outerRadius: '105%'},{from: -20,to: -10,color: '#00C000',innerRadius: '100%',outerRadius: '105%'},{from: -30,to: -20,color: '#AFFF0F',innerRadius: '100%',outerRadius: '105%'},{from: -40,to: -30,color: '#C0A316',innerRadius: '100%',outerRadius: '105%'}],\n");
-	strcat(webString, "pane: 0,title: {text: '<span style=\"font-size:12px\">dBV</span>',y: -40}}];\n");
-	strcat(webString, "var plotOptions = {gauge: {dataLabels: {enabled: false},dial: {radius: '100%'}}};\n");
-	strcat(webString, "var series= [{data: [-40],yAxis: 0}];\n");
-	strcat(webString, "var json = {};\n json.chart = chart;\n json.credits = credits;\n json.title = title;\n json.pane = pane;\n json.yAxis = yAxis;\n json.plotOptions = plotOptions;\n json.series = series;\n");
-	// Add some life
-	strcat(webString, "var chartFunction = function (chart) { \n"); // the chart may be destroyed
-	strcat(webString, "var Vrms=0;\nvar dBV=-40;\nvar active=0;var raw=\"\";var timeStamp;\n");
-	strcat(webString, "if (chart.series) {\n");
-	strcat(webString, "var left = chart.series[0].points[0];\n");
-	strcat(webString, "var host='ws://'+location.hostname+':81/ws'\n");
-	strcat(webString, "const ws = new WebSocket(host);\n");
-	strcat(webString, "ws.onopen = function() { console.log('Connection opened');};\n ws.onclose = function() { console.log('Connection closed');};\n");
-	strcat(webString, "ws.onmessage = function(event) {\n  console.log(event.data);\n");
-	strcat(webString, "const jsonR=JSON.parse(event.data);\n");
-	strcat(webString, "active=parseInt(jsonR.Active);\n");
-	strcat(webString, "Vrms=parseFloat(jsonR.mVrms)/1000;\n");
-	strcat(webString, "dBV=20.0*Math.log10(Vrms);\n");
-	strcat(webString, "if(dBV<-40) dBV=-40;\n");
-	strcat(webString, "raw=jsonR.RAW;\n");
-	strcat(webString, "timeStamp=Number(jsonR.timeStamp);\n");
-	strcat(webString, "if(active==1){\nleft.update(dBV,false);\nchart.redraw();\n");
-	strcat(webString, "var date=new Date(timeStamp * 1000);\n");
-	strcat(webString, "var head=date+\"[\"+Vrms.toFixed(3)+\"Vrms,\"+dBV.toFixed(1)+\"dBV]\\n\";\n");
-	// strcat(webString, "document.getElementById(\"raw_txt\").value+=head+atob(raw)+\"\\n\";\n");
-	strcat(webString, "var textArea=document.getElementById(\"raw_txt\");\n");
-	strcat(webString, "textArea.value+=head+atob(raw)+\"\\n\";\n");
-	strcat(webString, "textArea.scrollTop = textArea.scrollHeight;\n");
-	strcat(webString, "}\n");
-	strcat(webString, "}\n");
-	strcat(webString, "}};\n");
-	strcat(webString, "$('#vumeter').highcharts(json, chartFunction);\n");
-	strcat(webString, "});\n</script>\n");
-	strcat(webString, "</head><body>\n<table>\n");
-	// strcat(webString, "<tr><td><form accept-charset=\"UTF-8\" action=\"/test\" class=\"form-horizontal\" id=\"test_form\" method=\"post\">\n");
-	// strcat(webString, "<div style=\"margin-left: 20px;\"><input type='submit' class=\"btn btn-danger\" name=\"sendBeacon\" value='SEND BEACON'></div><br />\n");
-	// strcat(webString, "<div style=\"margin-left: 20px;\">TNC2 RAW: <input id=\"raw\" name=\"raw\" type=\"text\" size=\"60\" value=\"" + String(config.aprs_mycall) + ">APE32I,WIDE1-1:>Test Status\"/></div>\n");
-	// strcat(webString, "<div style=\"margin-left: 20px;\"><input type='submit' class=\"btn btn-primary\" name=\"sendRaw\" value='SEND RAW'></div> <br />\n");
-	// strcat(webString, "</form></td></tr>\n");
-	// strcat(webString, "<tr><td><hr width=\"80%\" /></td></tr>\n");
-	strcat(webString, "<tr><td><div id=\"vumeter\" style=\"width: 300px; height: 200px; margin: 10px;\"></div></td>\n");
+	// SM0TGY: offline level meter (no jQuery/Highcharts from the internet).
+	// Shows the level of each received packet in Vrms and dBV with a bar
+	// (-40..0 dBV). Used when setting RV2 (RX level).
+	strcpy(webString, "<html>\n<head>\n<style>#bar{height:18px;background:#0a0;width:0}#barbox{width:300px;border:1px solid #888}</style>\n");
+	strcat(webString, "<script>\n");
+	strcat(webString, "function vu(){var ws=new WebSocket('ws://'+location.hostname+':81/ws');\n");
+	strcat(webString, "ws.onmessage=function(event){var j=JSON.parse(event.data);if(parseInt(j.Active)!=1)return;\n");
+	strcat(webString, "var v=parseFloat(j.mVrms)/1000;var d=20*Math.log10(v);if(!isFinite(d)||d<-40)d=-40;\n");
+	strcat(webString, "document.getElementById('vrms').innerHTML=v.toFixed(3);document.getElementById('dbv').innerHTML=d.toFixed(1);\n");
+	strcat(webString, "var b=document.getElementById('bar');b.style.width=Math.round((d+40)/40*300)+'px';b.style.background=(d>-10)?'#c02316':(d>-20?'#00c000':'#e0b000');\n");
+	strcat(webString, "var t=document.getElementById('raw_txt');t.value+=new Date(Number(j.timeStamp)*1000).toISOString()+' ['+v.toFixed(3)+' Vrms, '+d.toFixed(1)+' dBV]\\n'+atob(j.RAW)+'\\n';t.scrollTop=t.scrollHeight;};}\n");
+	strcat(webString, "</script>\n");
+	strcat(webString, "</head><body onload=\"vu()\">\n<table>\n");
+	strcat(webString, "<tr><td><div style=\"margin:10px\"><b>RX audio level (last packet)</b><br />Vrms: <span id=\"vrms\">-</span> &nbsp; dBV: <span id=\"dbv\">-</span><div id=\"barbox\"><div id=\"bar\"></div></div><small>-40 dBV ... 0 dBV. Green -20..-10 dBV, red above -10 dBV.</small></div></td></tr>\n");
 	strcat(webString, "<tr><td><div style=\"margin: 15px;\">Terminal<br /><textarea id=\"raw_txt\" name=\"raw_txt\" rows=\"50\" cols=\"80\" /></textarea></div></td></tr>\n");
 	strcat(webString, "</table>\n");
 
@@ -11751,16 +11776,12 @@ void handle_about(AsyncWebServerRequest *request)
 	strcat(webString, "<td width=\"49%\" style=\"border:unset;\">");
 
 	strcat(webString, "<table>");
-	strcat(webString, "<th colspan=\"2\"><span><b>Developer/Support Information</b></span></th>\n");
-	strcat(webString, "<tr><td align=\"right\"><b>Author: </b></td><td align=\"left\">Mr.Somkiat Nakhonthai </td></tr>");
-	strcat(webString, "<tr><td align=\"right\"><b>Callsign: </b></td><td align=\"left\">HS5TQA,Atten,Nakhonthai</td></tr>\n");
-	strcat(webString, "<tr><td align=\"right\"><b>Country: </b></td><td align=\"left\">Bangkok,Thailand</td></tr>\n");
-	strcat(webString, "<tr><td align=\"right\"><b>Github: </b></td><td align=\"left\"><a href=\"https://github.com/nakhonthai\" target=\"_github\">https://github.com/nakhonthai</a></td></tr>");
-	strcat(webString, "<tr><td align=\"right\"><b>Youtube: </b></td><td align=\"left\"><a href=\"https://www.youtube.com/@HS5TQA\" target=\"_youtube\">https://www.youtube.com/@HS5TQA</a></td></tr>");
-	strcat(webString, "<tr><td align=\"right\"><b>Facebook: </b></td><td align=\"left\"><a href=\"https://www.facebook.com/atten\" target=\"_facebook\">https://www.facebook.com/atten</a></td></tr>");
-	strcat(webString, "<tr><td align=\"right\"><b>Chat: </b></td><td align=\"left\">Telegram:<a href=\"https://t.me/HS5TQA\" target=\"_line\">@HS5TQA</a> , WeChat:HS5TQA</td></tr>");
-	strcat(webString, "<tr><td align=\"right\"><b>Sponsors: </b></td><td align=\"left\"><a href=\"https://github.com/sponsors/nakhonthai\" target=\"_sponsor\">https://github.com/sponsors/nakhonthai</a></td></tr>");
-	strcat(webString, "<tr><td align=\"right\"><b>Donate: </b></td><td align=\"left\"><a href=\"https://www.paypal.me/0hs5tqa0\" target=\"_sponsor\">https://www.paypal.me/0hs5tqa0</a></td></tr>");
+	strcat(webString, "<th colspan=\"2\"><span><b>Firmware</b></span></th>\n");
+	strcat(webString, "<tr><td align=\"right\"><b>Version: </b></td><td align=\"left\">SM0TGY APRS Tracker v" FORK_VERSION "</td></tr>\n");
+	strcat(webString, "<tr><td align=\"right\"><b>Source: </b></td><td align=\"left\">github.com/tobbjo71/ESP32APRS_Audio (branch newn-digi)</td></tr>\n");
+	strcat(webString, "<tr><td align=\"right\"><b>Based on: </b></td><td align=\"left\">ESP32APRS_Audio by Somkiat Nakhonthai HS5TQA, github.com/nakhonthai/ESP32APRS_Audio</td></tr>\n");
+	strcat(webString, "<tr><td align=\"right\"><b>License: </b></td><td align=\"left\">GNU GPL v3. No warranty.</td></tr>\n");
+	strcat(webString, "<tr><td align=\"right\"><b>APRS symbols: </b></td><td align=\"left\">aprs.fi symbol set, github.com/hessu/aprs-symbols</td></tr>\n");
 
 	strcat(webString, "</table>");
 	strcat(webString, "</td></tr></table><br />");
@@ -11999,9 +12020,9 @@ void handle_gnss(AsyncWebServerRequest *request)
 	strcat(webString, "function gnss() { \n"); // the chart may be destroyed
 	strcat(webString, "var raw=\"\";var timeStamp;\n");
 	strcat(webString, "var host='ws://'+location.hostname+':81/ws_gnss'\n");
-	strcat(webString, "const ws = new WebSocket(host);\n");
-	strcat(webString, "ws.onopen = function() { console.log('Connection opened');};\n ws.onclose = function() { console.log('Connection closed');};\n");
-	strcat(webString, "ws.onmessage = function(event) {\n  console.log(event.data);\n");
+	strcat(webString, "if (window.gnssWs) { try { window.gnssWs.close(); } catch (e) {} }\nconst ws = new WebSocket(host); window.gnssWs = ws;\n");
+	// (connection log removed)
+	strcat(webString, "ws.onmessage = function(event) {\nif (!document.getElementById(\"raw_txt\")) { ws.close(); return; }\n");
 	strcat(webString, "const jsonR=JSON.parse(event.data);\n");
 	strcat(webString, "document.getElementById(\"en\").innerHTML=parseInt(jsonR.en);\n");
 	strcat(webString, "document.getElementById(\"lat\").innerHTML=parseFloat(jsonR.lat);\n");
@@ -12019,7 +12040,7 @@ void handle_gnss(AsyncWebServerRequest *request)
 	strcat(webString, "textArea.scrollTop = textArea.scrollHeight;\n");
 	strcat(webString, "}\n");
 	strcat(webString, "};\n</script>\n");
-	strcat(webString, "</head><body onload=\"gnss()\">\n");
+	strcat(webString, "</head><body>\n");
 
 	strcat(webString, "<table width=\"200\" border=\"1\">");
 	strcat(webString, "<th colspan=\"2\" style=\"background-color: #00BCD4;\"><span><b>GNSS Information</b></span></th>\n");
@@ -12117,7 +12138,7 @@ void handle_gnss(AsyncWebServerRequest *request)
 
 	strcat(webString, "</table><table>");
 	strcat(webString, "<tr><td><b>Terminal:</b><br /><textarea id=\"raw_txt\" name=\"raw_txt\" rows=\"30\" cols=\"80\" /></textarea></td></tr>\n");
-	strcat(webString, "</table>\n");
+	strcat(webString, "</table>\n<script>gnss();</script>\n");
 
 	strcat(webString, "</body></html>\n");
 
@@ -12219,10 +12240,14 @@ void webService()
 	// 				{ handle_symbol2(request); });
 	async_server.on("/logout", HTTP_GET, [](AsyncWebServerRequest *request)
 					{ handle_logout(request); });
+	async_server.on("/symbols/icons", HTTP_GET, [](AsyncWebServerRequest *request)
+					{ handle_symbol_icon(request); });
 	async_server.on("/radio", HTTP_GET | HTTP_POST, [](AsyncWebServerRequest *request)
 					{ handle_radio(request); });
+#ifndef FORK_SLIM
 	async_server.on("/vpn", HTTP_GET | HTTP_POST, [](AsyncWebServerRequest *request)
 					{ handle_vpn(request); });
+#endif // FORK_SLIM
 #ifdef MQTT
 	async_server.on("/mqtt", HTTP_GET | HTTP_POST, [](AsyncWebServerRequest *request)
 					{ handle_mqtt(request); });
@@ -12239,12 +12264,18 @@ void webService()
 					{ handle_digi(request); });
 	async_server.on("/tracker", HTTP_GET | HTTP_POST, [](AsyncWebServerRequest *request)
 					{ handle_tracker(request); });
+#ifndef FORK_SLIM
 	async_server.on("/wx", HTTP_GET | HTTP_POST, [](AsyncWebServerRequest *request)
 					{ handle_wx(request); });
+#endif // FORK_SLIM
+#ifndef FORK_SLIM
 	async_server.on("/tlm", HTTP_GET | HTTP_POST, [](AsyncWebServerRequest *request)
 					{ handle_tlm(request); });
+#endif // FORK_SLIM
+#ifndef FORK_SLIM
 	async_server.on("/sensor", HTTP_GET | HTTP_POST, [](AsyncWebServerRequest *request)
 					{ handle_sensor(request); });
+#endif // FORK_SLIM
 	async_server.on("/system", HTTP_GET | HTTP_POST, [](AsyncWebServerRequest *request)
 					{ handle_system(request); });
 	async_server.on("/wireless", HTTP_GET | HTTP_POST, [](AsyncWebServerRequest *request)
