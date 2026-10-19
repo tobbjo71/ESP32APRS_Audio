@@ -5805,7 +5805,12 @@ void handle_system(AsyncWebServerRequest *request)
 	}
 	else if (request->hasArg("Factory"))
 	{
+		// Restore built-in defaults, store them and restart so they take effect
 		defaultConfig();
+		saveConfiguration("/default.cfg", config);
+		request->send(200, "text/html", "OK");
+		delay(500);
+		esp_restart();
 	}
 	else if (request->hasArg("LoadCFG"))
 	{
@@ -11897,7 +11902,7 @@ void handle_about(AsyncWebServerRequest *request)
 	strcat(webString, "<th colspan=\"2\"><span><b>Manual Firmware Update</b></span></th>\n");
 	strcat(webString, "<tr><td align=\"right\"><b>File:</b></td><td align=\"left\"><input id=\"file\" name=\"update\" type=\"file\" onchange='sub(this)' /></td></tr>\n");
 	strcat(webString, "<tr><td align=\"right\"><b>Progress:</b></td><td><div id='prgbar'><div id='bar' style=\"width: 0px;\"><label id='prg'></label></div></div></td></tr>\n");
-	strcat(webString, "<tr><td align=\"right\"><b>Support Firmware:</b></td><td align=\"left\"><a target=\"_download\" href=\"https://github.com/nakhonthai/ESP32APRS_LoRa/releases\">https://github.com/nakhonthai/ESP32APRS_LoRa/releases</a></td></tr>\n");
+	strcat(webString, "<tr><td align=\"right\"><b>Support Firmware:</b></td><td align=\"left\"><a target=\"_download\" href=\"https://github.com/tobbjo71/ESP32APRS_Audio/tree/newn-digi\">github.com/tobbjo71/ESP32APRS_Audio (newn-digi)</a></td></tr>\n");
 	
 	strcat(webString, "<tr><td colspan=\"2\" align=\"right\"><div class=\"col-sm-3 col-xs-4\"><input type='submit' class=\"btn btn-danger\" id=\"update_sumbit\" value='Firmware UpLoad'></div></td></tr>\n");
 	strcat(webString, "</table><br />\n");
@@ -11940,113 +11945,8 @@ void handle_about(AsyncWebServerRequest *request)
 					  "});"
 					  "</script>");
 
-	{
-		char ota_url_buf[200];
-		snprintf(ota_url_buf, sizeof(ota_url_buf), "http://fw.nakhonthai.net/Audio/%s", FirmwareOTA);
-
-		// Derive the board-specific firmware name prefix (FirmwareOTA minus the
-		// trailing "_V<ver><build>.bin") so the client JS can rebuild the filename
-		// for a newer release once /check_version reports one is available.
-		char FirmwarePrefix[50] = "";
-		{
-			char suffix[40];
-			snprintf(suffix, sizeof(suffix), "_V%s%s.bin", verNoDot, VERSION_BUILD);
-			size_t suffixLen = strlen(suffix);
-			size_t fwLen = strlen(FirmwareOTA);
-			if (fwLen > suffixLen)
-			{
-				size_t prefixLen = fwLen - suffixLen;
-				if (prefixLen >= sizeof(FirmwarePrefix))
-					prefixLen = sizeof(FirmwarePrefix) - 1;
-				memcpy(FirmwarePrefix, FirmwareOTA, prefixLen);
-				FirmwarePrefix[prefixLen] = '\0';
-			}
-		}
-
-		strcat(webString, "<table>");
-		strcat(webString, "<th colspan=\"2\"><span><b>OTA Online Firmware Update</b></span></th>\n");
-		char ota_row[512];
-		snprintf(ota_row, sizeof(ota_row),
-			"<tr><td align=\"right\"><b>Firmware File:</b></td><td align=\"left\"><a id=\"fw_file_link\" href=\"%s\" target=\"_blank\">%s</a></td></tr>\n",
-			ota_url_buf, FirmwareOTA);
-		strcat(webString, ota_row);
-		snprintf(ota_row, sizeof(ota_row),
-			"<tr><td align=\"right\"><b>Current Version:</b></td><td align=\"left\">V%s%s</td></tr>\n",
-			VERSION, VERSION_BUILD);
-		strcat(webString, ota_row);
-		strcat(webString, "<tr><td align=\"right\"><b>Status:</b></td><td><span id='ota_prg'>Ready</span></td></tr>\n");
-		snprintf(ota_row, sizeof(ota_row),
-			"<tr><td colspan=\"2\" align=\"right\"><div class=\"col-sm-3 col-xs-4\">"
-			"<input type='hidden' id='ota_url' value='%s'>"
-			"<input type='hidden' id='fw_prefix' value='%s'>"
-			"<input type='button' class=\"btn btn-danger\" id=\"check_ver_btn\" value='Check New Version'>"
-			"<input type='button' class=\"btn btn-danger\" id=\"ota_sumbit\" value='Firmware Update'>"
-			"</div></td></tr>\n",
-			ota_url_buf, FirmwarePrefix);
-		strcat(webString, ota_row);
-		strcat(webString, "</table><br />\n");
-	}
-
-	// strcat(webString, "<table>");
-	// strcat(webString, "<th colspan=\"2\"><span><b>Check for New Version</b></span></th>\n");
-	// strcat(webString, "<tr><td align=\"right\"><b>Update Server:</b></td><td align=\"left\"><a href=\"" VERSION_CHECK_URL "\" target=\"_blank\">" VERSION_CHECK_URL "</a></td></tr>\n");
-	// strcat(webString, "<tr><td align=\"right\"><b>Status:</b></td><td align=\"left\"><span id='ver_check_result'>-</span></td></tr>\n");
-	// strcat(webString, "<tr><td colspan=\"2\" align=\"right\"><div class=\"col-sm-3 col-xs-4\"><input type='button' class=\"btn btn-danger\" id=\"check_ver_btn\" value='Check New Version'></div></td></tr>\n");
-	// strcat(webString, "</table><br />\n");
-
-	strcat(webString, "<script>"
-					  "document.getElementById('check_ver_btn').addEventListener('click', function(){"
-					  "document.getElementById('check_ver_btn').disabled = true;"
-					  "document.getElementById('ota_prg').innerHTML = 'Checking...';"
-					  "$.ajax({"
-					  "url: '/check_version',"
-					  "type: 'GET',"
-					  "dataType: 'json',"
-					  "success: function(d) {"
-					  "document.getElementById('check_ver_btn').disabled = false;"
-					  "if (d.update_available) {"
-					  "var noDotVer = d.latest_version.replace(/\\./g, '');"
-					  "var prefix = document.getElementById('fw_prefix').value;"
-					  "var newFile = prefix + '_V' + noDotVer + d.latest_build + '.bin';"
-					  "var newUrl = 'http://fw.nakhonthai.net/Audio/' + newFile;"
-					  "var fwLink = document.getElementById('fw_file_link');"
-					  "fwLink.href = newUrl;"
-					  "fwLink.innerHTML = newFile;"
-					  "document.getElementById('ota_url').value = newUrl;"
-					  "document.getElementById('ota_prg').innerHTML = 'New version available: V' + d.latest_version + d.latest_build + ' (' + d.latest_date + ') - firmware link updated.';"
-					  "} else {"
-					  "document.getElementById('ota_prg').innerHTML = 'You are using the latest version.';"
-					  "}"
-					  "},"
-					  "error: function(a, b, c) {"
-					  "document.getElementById('check_ver_btn').disabled = false;"
-					  "document.getElementById('ota_prg').innerHTML = 'Error checking version: ' + c;"
-					  "}"
-					  "});"
-					  "});"
-					  "</script>");
-
-	strcat(webString, "<script>"
-					  "document.getElementById('ota_sumbit').addEventListener('click', function(){"
-					  "if (!confirm('Download and install firmware from URL?\\n' + document.getElementById('ota_url').value)) return;"
-					  "document.getElementById('ota_sumbit').disabled = true;"
-					  "document.getElementById('ota_prg').innerHTML = 'Downloading... Please wait ~30 sec';"
-					  "$.ajax({"
-					  "url: '/ota_url',"
-					  "type: 'POST',"
-					  "data: { url: document.getElementById('ota_url').value },"
-					  "success: function(d, s) {"
-					  "document.getElementById('ota_prg').innerHTML = 'Update started. Rebooting...';"
-					  "alert('OTA update started. Wait for system reboot (~30sec).');"
-					  "},"
-					  "error: function(a, b, c) {"
-					  "document.getElementById('ota_prg').innerHTML = 'Error: ' + c;"
-					  "document.getElementById('ota_sumbit').disabled = false;"
-					  "alert('OTA update failed: ' + c);"
-					  "}"
-					  "});"
-					  "});"
-					  "</script>");
+	// Online update from fw.nakhonthai.net removed: it would install upstream
+	// firmware over this fork. Use Manual Firmware Update with a fork build.
 #endif
 	strcat(webString, "</body></html>\n");
 
@@ -12067,9 +11967,7 @@ void handle_gnss(AsyncWebServerRequest *request)
 		return;
 	}
 	strcpy(webString, "<html>\n<head>\n");
-	strcat(webString, "<script src=\"https://apps.bdimg.com/libs/jquery/2.1.4/jquery.min.js\"></script>\n");
-	strcat(webString, "<script src=\"https://code.highcharts.com/highcharts.js\"></script>\n");
-	strcat(webString, "<script src=\"https://code.highcharts.com/highcharts-more.js\"></script>\n");
+	// No external scripts: the page only uses a WebSocket and must work offline on the AP
 	strcat(webString, "<script language=\"JavaScript\">");
 
 	// Add some life
@@ -12414,11 +12312,7 @@ void webService()
 			}
 		});
 
-	async_server.on("/ota_url", HTTP_POST, [](AsyncWebServerRequest *request)
-					{ handle_ota_url(request); });
-
-	async_server.on("/check_version", HTTP_GET, [](AsyncWebServerRequest *request)
-					{ handle_check_version(request); });		
+	// /ota_url and /check_version (online update from upstream server) not registered in this fork		
 
 	lastheard_events.onConnect([](AsyncEventSourceClient *client)
 							   {
