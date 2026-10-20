@@ -36,7 +36,7 @@ static char otaLatest[16] = "";
 static char otaFile[64] = "";
 static char otaMd5[40] = "";
 static uint32_t otaSize = 0;
-static char otaErr[96] = "";
+static char otaErr[160] = "";
 static TaskHandle_t otaTask = NULL;
 
 static int verNum(const char *v)
@@ -78,10 +78,26 @@ static bool jsonGet(const String &js, const char *key, char *out, size_t cap)
 static int httpsGet(NetworkClientSecure *cli, const char *path, long *clen)
 {
 	*clen = -1;
-	if (!cli->connect(FORK_OTA_HOST, 443))
-		return -1;
+	IPAddress ip;
+	if (!WiFi.hostByName(FORK_OTA_HOST, ip))
+	{
+		strlcpy(otaErr, "DNS lookup of " FORK_OTA_HOST " failed", sizeof(otaErr));
+		return -10;
+	}
+	if (time(NULL) < 1700000000)
+	{
+		strlcpy(otaErr, "Clock not set (needs GPS fix or NTP) - certificates cannot be checked", sizeof(otaErr));
+		return -11;
+	}
+	if (!cli->connect(ip, 443, FORK_OTA_HOST, NULL, NULL, NULL))
+	{
+		char e[64] = "";
+		int code = cli->lastError(e, sizeof(e));
+		snprintf(otaErr, sizeof(otaErr), "TLS to %s failed: %s (%d), free RAM %u", ip.toString().c_str(), e, code, (unsigned)ESP.getFreeHeap());
+		return -12;
+	}
 	cli->printf("GET %s HTTP/1.1\r\nHost: " FORK_OTA_HOST "\r\nUser-Agent: SM0TGY-APRSTracker/" FORK_VERSION "\r\nConnection: close\r\n\r\n", path);
-	cli->setTimeout(15);
+	cli->setTimeout(15000); // milliseconds
 	String line = cli->readStringUntil('\n');
 	int code = -2;
 	if (line.startsWith("HTTP/1."))
@@ -106,9 +122,14 @@ static void otaCheckTask(void *)
 	int code = httpsGet(cli, FORK_OTA_PATH "manifest_" FORK_OTA_VARIANT ".json", &clen);
 	if (code != 200)
 	{
-		char m[64];
-		snprintf(m, sizeof(m), code < 0 ? "No connection to GitHub (%d)" : "GitHub answered %d", code);
-		otaFail(m);
+		if (code <= -10)
+			otaState = OTA_ERROR; // otaErr already holds the detail
+		else
+		{
+			char m[64];
+			snprintf(m, sizeof(m), code < 0 ? "No answer from GitHub (%d)" : "GitHub answered %d", code);
+			otaFail(m);
+		}
 	}
 	else
 	{
@@ -140,9 +161,14 @@ static void otaInstallTask(void *)
 	int code = httpsGet(cli, path, &len);
 	if (code != 200)
 	{
-		char m[64];
-		snprintf(m, sizeof(m), "Download failed (%d)", code);
-		otaFail(m);
+		if (code <= -10)
+			otaState = OTA_ERROR;
+		else
+		{
+			char m[64];
+			snprintf(m, sizeof(m), "Download failed (%d)", code);
+			otaFail(m);
+		}
 	}
 	else if (len <= 0 || (otaSize && (uint32_t)len != otaSize))
 		otaFail("Unexpected file size");
@@ -210,7 +236,7 @@ static bool otaAuth(AsyncWebServerRequest *r)
 static void otaStatus(AsyncWebServerRequest *r)
 {
 	static const char *names[] = {"idle", "checking", "available", "uptodate", "downloading", "done", "error"};
-	char js[320];
+	char js[420];
 	snprintf(js, sizeof(js), "{\"state\":\"%s\",\"cur\":\"%s\",\"latest\":\"%s\",\"size\":%lu,\"pct\":%d,\"err\":\"%s\",\"net\":%d}",
 			 names[otaState], FORK_VERSION, otaLatest, (unsigned long)otaSize, otaPct, otaErr, WiFi.isConnected() ? 1 : 0);
 	AsyncWebServerResponse *resp = r->beginResponse(200, "application/json", js);
