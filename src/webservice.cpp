@@ -1094,6 +1094,7 @@ void handle_symbol(AsyncWebServerRequest *request)
 	}
 }
 
+#include "esp_core_dump.h"
 // ---- SM0TGY: memory and stability diagnostics (/diag) ----
 extern size_t diagMaxPage;
 extern char diagMaxPageUrl[32];
@@ -1171,6 +1172,25 @@ void handle_diag(AsyncWebServerRequest *request)
 	strlcat(html, row, cap);
 	snprintf(row, sizeof(row), "<tr><td>Wi-Fi</td><td>AP clients %d, STA %s</td></tr>\n", WiFi.softAPgetStationNum(), WiFi.isConnected() ? "connected" : "not connected");
 	strlcat(html, row, cap);
+	// Last crash, from the core dump that ESP-IDF writes to the coredump partition
+	{
+		static esp_core_dump_summary_t cd;
+		if (esp_core_dump_image_check() == ESP_OK && esp_core_dump_get_summary(&cd) == ESP_OK)
+		{
+			snprintf(row, sizeof(row), "<tr><td>Last crash</td><td>task %s, PC 0x%08lx, cause %lu, addr 0x%08lx, app %.8s</td></tr>\n",
+					 cd.exc_task, (unsigned long)cd.exc_pc, (unsigned long)cd.ex_info.exc_cause, (unsigned long)cd.ex_info.exc_vaddr, (const char *)cd.app_elf_sha256);
+			strlcat(html, row, cap);
+			strlcat(html, "<tr><td>Backtrace</td><td style=\"font-family:monospace\">", cap);
+			for (uint32_t i = 0; i < cd.exc_bt_info.depth && i < 16; i++)
+			{
+				snprintf(row, sizeof(row), "0x%08lx ", (unsigned long)cd.exc_bt_info.bt[i]);
+				strlcat(html, row, cap);
+			}
+			strlcat(html, cd.exc_bt_info.corrupted ? "(corrupted)</td></tr>\n" : "</td></tr>\n", cap);
+		}
+		else
+			strlcat(html, "<tr><td>Last crash</td><td>no core dump stored</td></tr>\n", cap);
+	}
 	strlcat(html, "</table>\n<h4>Task stacks (bytes)</h4>\n<table border=\"1\" cellpadding=\"3\"><tr><th>Task</th><th>Size</th><th>Never used (min free)</th></tr>\n", cap);
 	diagTaskRow(html, cap, "taskNetwork", taskNetworkHandle, 12000);
 	diagTaskRow(html, cap, "taskAPRS", taskAPRSHandle, 4096);
