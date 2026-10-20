@@ -283,6 +283,8 @@ void setMainPage(AsyncWebServerRequest *request)
 	strcat(webString, "$(\"#contentmain\").load(\"/radio\");\n");
 	strcat(webString, "} else if (tabName == 'IGATE') {\n");
 	strcat(webString, "$(\"#contentmain\").load(\"/igate\");\n");
+	strcat(webString, "} else if (tabName == 'FILTER') {\n");
+	strcat(webString, "$(\"#contentmain\").load(\"/igate?part=filter\");\n");
 	strcat(webString, "} else if (tabName == 'DIGI') {\n");
 	strcat(webString, "$(\"#contentmain\").load(\"/digi\");\n");
 	strcat(webString, "} else if (tabName == 'TRACKER') {\n");
@@ -445,6 +447,7 @@ void setMainPage(AsyncWebServerRequest *request)
 	strcat(webString, "<button class=\"nav-tabs\" onclick=\"selectTab(event, 'DashBoard')\">DashBoard</button>\n");
 	strcat(webString, "<button class=\"nav-tabs\" onclick=\"selectTab(event, 'Radio')\" id=\"btnRadio\">Radio</button>\n");
 	strcat(webString, "<button class=\"nav-tabs\" onclick=\"selectTab(event, 'IGATE')\">IGATE</button>\n");
+	strcat(webString, "<button class=\"nav-tabs\" onclick=\"selectTab(event, 'FILTER')\">FILTER</button>\n");
 	strcat(webString, "<button class=\"nav-tabs\" onclick=\"selectTab(event, 'DIGI')\">DIGI</button>\n");
 	strcat(webString, "<button class=\"nav-tabs\" onclick=\"selectTab(event, 'TRACKER')\">TRACKER</button>\n");
 	strcat(webString, "<button class=\"nav-tabs\" onclick=\"selectTab(event, 'GNSS')\">GNSS</button>\n");
@@ -564,8 +567,6 @@ void handle_dashboard(AsyncWebServerRequest *request)
 
 	//strcat(webString, "<script>\n");
 	// strcat(webString, "let aprsData = [\n");
-	// strcat(webString, "  { time: \"21:54:23\", icon: \"91-1.png\", callsign: \"HS5TQA-7\", path: \"RF: WIDE1-1\", dx: 0.0, packet: 2, audio: -19.6 },\n");
-	// strcat(webString, "  { time: \"22:13:33\", icon: \"66-1.png\", callsign: \"HS5TQA-3\", path: \"RF: DIRECT\", dx: null, packet: 9, audio: -14.1 }\n");
 	// strcat(webString, "];\n\n");
 	// strcat(webString, "const tableBody = document.querySelector(\"#aprsTable tbody\");\n");
 	// strcat(webString, "let sortDirection = {};\n");
@@ -1349,7 +1350,6 @@ void event_lastHeard(bool gethtml)
 
 	// log_d("Create html last heard");
 	localtime_r(&timeNow, &tmNow);
-//strcat(webString, "  { time: \"21:54:23\", icon: \"91-1.png\", callsign: \"HS5TQA-7\", path: \"RF: WIDE1-1\", dx: 0.0, packet: 2, audio: -19.6 },\n");
 	strcpy(html, "[");
 	for (int i = 0; i < PKGLISTSIZE; i++)
 	{
@@ -1440,7 +1440,6 @@ void event_lastHeard(bool gethtml)
 					// String str = String(tmstruct.tm_hour, DEC) + ":" + String(tmstruct.tm_min, DEC) + ":" + String(tmstruct.tm_sec, DEC);
 
 					// Append to html
-					// strcat(html, "  { time: \"21:54:23\", icon: \"91-1.png\", callsign: \"HS5TQA-7\", path: \"RF: WIDE1-1\", dx: 0.0, packet: 2, rssi: -19.6 },\n");
 					
 					snprintf(temp_html, sizeof(temp_html), "{\"time\":\"%s\",", strTime);
 					strcat(html, temp_html);
@@ -7638,7 +7637,6 @@ void handle_igate(AsyncWebServerRequest *request)
 		strcat(html, "</script>\n");
 		if (filterPart)
 		{
-			strcat(html, "<p><a href=\"#\" onclick=\"$('#contentmain').load('/igate');return false;\">&larr; IGATE settings</a></p>\n");
 		}
 		else
 		{
@@ -7771,12 +7769,12 @@ void handle_igate(AsyncWebServerRequest *request)
 		strcat(html, "</tr>\n");
 		strcat(html, "<tr>\n");
 		strcat(html, "<td align=\"right\"><b>Server Host:</b></td>\n");
-		snprintf(tempHtml, sizeof(tempHtml), "<td style=\"text-align: left;\"><input maxlength=\"20\" size=\"20\" id=\"aprsHost\" name=\"aprsHost\" type=\"text\" value=\"%s\" /> *APRS-IS by T2THAI at <a href=\"http://aprs.nakhonthai.net:14501\" target=\"_t2thai\">aprs.nakhonthai.net:14580</a>,CBAPRS at <a href=\"http://aprs.nakhonthai.net:24501\" target=\"_t2thai\">aprs.nakhonthai.net:24580</a></td>\n", config.aprs_host);
+		snprintf(tempHtml, sizeof(tempHtml), "<td style=\"text-align: left;\"><input maxlength=\"20\" size=\"20\" id=\"aprsHost\" name=\"aprsHost\" type=\"text\" value=\"%s\" /></td>\n", config.aprs_host);
 		strcat(html, tempHtml);
 		strcat(html, "</tr>\n");
 		strcat(html, "<tr>\n");
 		strcat(html, "<td align=\"right\"><b>Server Port:</b></td>\n");
-		snprintf(tempHtml, sizeof(tempHtml), "<td style=\"text-align: left;\"><input min=\"1\" max=\"65535\" step=\"1\" id=\"aprsPort\" name=\"aprsPort\" type=\"number\" value=\"%d\" /> *AMPR Host at <a href=\"http://aprs.hs5tqa.ampr.org:14501\" target=\"_t2thai\">aprs.hs5tqa.ampr.org:14580</a></td>\n", config.aprs_port);
+		snprintf(tempHtml, sizeof(tempHtml), "<td style=\"text-align: left;\"><input min=\"1\" max=\"65535\" step=\"1\" id=\"aprsPort\" name=\"aprsPort\" type=\"number\" value=\"%d\" /></td>\n", config.aprs_port);
 		strcat(html, tempHtml);
 		strcat(html, "</tr>\n");
 		strcat(html, "<tr>\n");
@@ -7981,7 +7979,6 @@ void handle_igate(AsyncWebServerRequest *request)
 		strcat(html, "<input type=\"hidden\" name=\"commitIGATE\"/>\n");
 		strcat(html, "</td></tr></table><br />\n");
 		strcat(html, "</form><br />");
-		strcat(html, "<p><a href=\"#\" onclick=\"$('#contentmain').load('/igate?part=filter');return false;\">IGATE filter &rarr;</a></p>\n");
 		} // end main part
 		if (filterPart)
 		{
@@ -11700,6 +11697,7 @@ void handle_test(AsyncWebServerRequest *request)
 	// webString is freed when the request completes
 }
 
+#ifndef FORK_SLIM
 static void ota_url_task(void *pvParameters)
 {
 	char *url = (char *)pvParameters;
@@ -11804,6 +11802,7 @@ void handle_check_version(AsyncWebServerRequest *request)
 			 VERSION, VERSION_BUILD, latestVersion, latestBuild, latestDate, updateAvailable ? "true" : "false");
 	request->send(200, "application/json", resp);
 }
+#endif // FORK_SLIM (online update from upstream server not used in this fork)
 
 void handle_about(AsyncWebServerRequest *request)
 {
@@ -11908,9 +11907,6 @@ void handle_about(AsyncWebServerRequest *request)
 	if (temp_str)
 	{
 		snprintf(temp_str, 512, "<tr><td align=\"right\"><b>Firmware Version: </b></td><td align=\"left\"> SM0TGY v%s (ESP32APRS_Audio V%s%s)</td></tr>\n", FORK_VERSION, VERSION, VERSION_BUILD);
-		strcat(webString, temp_str);
-
-		snprintf(temp_str, 512, "<tr><td align=\"right\"><b>RF Module: </b></td><td align=\"left\"> %s</td></tr>\n", RF_TYPE[config.rf_type]);
 		strcat(webString, temp_str);
 
 		snprintf(temp_str, 512, "<tr><td align=\"right\"><b>ESP32 Model: </b></td><td align=\"left\"> %s</td></tr>", ESP.getChipModel());

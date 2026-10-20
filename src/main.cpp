@@ -2323,7 +2323,7 @@ config.oled_enable = true;
     config.log = 0;
 #ifdef MQTT
     config.en_mqtt = false;
-    sprintf(config.mqtt_host, "mqtt.nakhonthai.net");
+    config.mqtt_host[0] = 0; // SM0TGY: no upstream default server
     char strCID[13];
     uint64_t chipid = ESP.getEfuseMac();
     sprintf(strCID, "%04X%08X", (uint16_t)(chipid >> 32), (uint32_t)chipid);
