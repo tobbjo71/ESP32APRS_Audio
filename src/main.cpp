@@ -3600,6 +3600,10 @@ void bluetooth_init()
 #if BT_USE_BLE
         // Initialize BLE stack and Nordic UART service
         NimBLEDevice::init(config.bt_name);
+        // Advertising packet is max 31 bytes: flags (3) + 128-bit service UUID (18) leaves
+        // too little for the name. Put the name in the scan response so the service UUID
+        // stays in the advertisement (apps such as APRS Mobile look for the UUID).
+        NimBLEDevice::getAdvertising()->enableScanResponse(true);
         NimBLEDevice::getAdvertising()->setName(config.bt_name);
         // BLE Auth
         if (config.bt_pin > 0)
