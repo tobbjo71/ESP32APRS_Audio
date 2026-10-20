@@ -12550,9 +12550,12 @@ void webService()
 
 	// /ota_url and /check_version (online update from upstream server) not registered in this fork		
 
+	// SM0TGY: at most two connections per live page. Checked in the handler filter, before the
+	// client object exists; closing inside onConnect freed it while its constructor still ran (v1.11-v1.17 crash).
+	lastheard_events.setFilter([](AsyncWebServerRequest *r) { return lastheard_events.count() < 2; });
+	message_events.setFilter([](AsyncWebServerRequest *r) { return message_events.count() < 2; });
 	lastheard_events.onConnect([](AsyncEventSourceClient *client)
 							   {
-    if (lastheard_events.count() > 2) { client->close(); return; } // SM0TGY: max two dashboards
     if(client->lastId()){
       log_d("Client reconnected! Last message ID that it got is: %u\n", client->lastId());
     }
@@ -12565,7 +12568,6 @@ void webService()
 
 	message_events.onConnect([](AsyncEventSourceClient *client)
 							 {
-    if (message_events.count() > 2) { client->close(); return; } // SM0TGY: max two message pages
     if(client->lastId()){
       log_d("Client reconnected! Last message ID that it got is: %u\n", client->lastId());
     }
