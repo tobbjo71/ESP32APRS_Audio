@@ -232,6 +232,8 @@ void handle_logout(AsyncWebServerRequest *request)
 // SM0TGY v1.22: main page is the mobile shell in ui_fork.cpp (served from flash, no heap buffer).
 extern void handle_ui_shell(AsyncWebServerRequest *request);
 extern void uiForkRoutes(AsyncWebServer &srv);
+extern void otaGithubRoutes(AsyncWebServer &srv);
+extern const char UI_OTA[];
 void setMainPage(AsyncWebServerRequest *request)
 {
 	handle_ui_shell(request);
@@ -11619,7 +11621,12 @@ void handle_about(AsyncWebServerRequest *request)
 		request->send(500, "text/html", "Memory allocation failed");
 		return;
 	}
+#ifdef FORK_OTA_GITHUB
+	strcpy_P(webString, UI_OTA); // SM0TGY: update from GitHub
+	strcat(webString, "<table style=\"text-align:unset;border-width:0px;background:unset\"><tr style=\"background:unset;\"><td width=\"49%\" style=\"border:unset;\">");
+#else
 	strcpy(webString, "<table style=\"text-align:unset;border-width:0px;background:unset\"><tr style=\"background:unset;\"><td width=\"49%\" style=\"border:unset;\">");
+#endif
 
 	strcat(webString, "<table>");
 	strcat(webString, "<th colspan=\"2\"><span><b>System Information</b></span></th>\n");
@@ -12200,6 +12207,9 @@ void webService()
 	async_server.on("/", HTTP_GET, [](AsyncWebServerRequest *request)
 					{ setMainPage(request); });
 	uiForkRoutes(async_server); // SM0TGY: /status.json, /heard.json, /heard, /radar, /pkt, /more
+#ifdef FORK_OTA_GITHUB
+	otaGithubRoutes(async_server); // SM0TGY: update from the fork on GitHub
+#endif
 	async_server.on("/symbol", HTTP_GET, [](AsyncWebServerRequest *request)
 					{ handle_symbol(request); });
 	// async_server.on("/symbol2", HTTP_GET | HTTP_POST, [](AsyncWebServerRequest *request)
