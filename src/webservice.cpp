@@ -7559,7 +7559,7 @@ void handle_igate(AsyncWebServerRequest *request)
 		strcat(html, "</tr>\n");
 		strcat(html, "<tr>\n");
 		strcat(html, "<td align=\"right\"><b>Server Filter:</b></td>\n");
-		snprintf(tempHtml, sizeof(tempHtml), "<td style=\"text-align: left;\"><input maxlength=\"30\" size=\"30\" id=\"aprsFilter\" name=\"aprsFilter\" type=\"text\" value=\"%s\" /> *Filter: <a target=\"_blank\" href=\"http://www.aprs-is.net/javAPRSFilter.aspx\">http://www.aprs-is.net/javAPRSFilter.aspx</a></td>\n", config.aprs_filter);
+		snprintf(tempHtml, sizeof(tempHtml), "<td style=\"text-align: left;\"><input maxlength=\"30\" size=\"30\" id=\"aprsFilter\" name=\"aprsFilter\" type=\"text\" value=\"%s\" /><br /><small>m/50 = all stations within 50 km of the GPS position, follows you when you move. Other filters: <a target=\"_blank\" href=\"http://www.aprs-is.net/javAPRSFilter.aspx\">aprs-is.net</a></small></td>\n", config.aprs_filter);
 		strcat(html, tempHtml);
 		strcat(html, "</tr>\n");
 		strcat(html, "<tr>\n");

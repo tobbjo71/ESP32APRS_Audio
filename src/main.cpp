@@ -3580,6 +3580,82 @@ void RF_MODULE_CHECK()
 
 WiFiClient aprsClient;
 
+// SM0TGY: APRS-IS range filter that follows the GPS position.
+// If the configured filter starts with "m/R" or "r/lat/lon/R", the first term is replaced by
+// r/<GPS lat>/<GPS lon>/R while there is a fix (aprsc's m/ needs a known own position, which
+// a receive-only gateway does not give it). Other filters are sent unchanged.
+static double isFltLat = 0, isFltLon = 0;
+static bool isFltSet = false;
+static unsigned long isFltCheck = 0;
+static bool isFltFollow(int *radius, const char **rest)
+{
+    const char *f = config.aprs_filter;
+    int r = 0;
+    if (f[0] == 'm' && f[1] == '/')
+        r = atoi(f + 2);
+    else if (f[0] == 'r' && f[1] == '/')
+    {
+        const char *p = strchr(f, ' ');
+        const char *end = p ? p : f + strlen(f);
+        const char *q = end;
+        while (q > f && *(q - 1) != '/')
+            q--;
+        r = atoi(q);
+        int slashes = 0;
+        for (const char *c = f; c < end; c++)
+            if (*c == '/')
+                slashes++;
+        if (slashes != 3)
+            r = 0;
+    }
+    if (r <= 0 || r > 5000)
+        return false;
+    *radius = r;
+    *rest = strchr(f, ' ');
+    return true;
+}
+
+const char *aprsFilterNow(bool remember)
+{
+    static char flt[sizeof(config.aprs_filter) + 40];
+    int radius;
+    const char *rest;
+    if (isFltFollow(&radius, &rest) && gps.location.isValid() && gps.location.age() < 10000)
+    {
+        double lat = gps.location.lat(), lon = gps.location.lng();
+        snprintf(flt, sizeof(flt), "r/%.3f/%.3f/%d%s", lat, lon, radius, rest ? rest : "");
+        if (remember)
+        {
+            isFltLat = lat;
+            isFltLon = lon;
+            isFltSet = true;
+        }
+        return flt;
+    }
+    if (remember)
+        isFltSet = false;
+    return config.aprs_filter;
+}
+
+// Called from the network task while connected: send #filter after moving more than 10 km.
+void aprsFilterFollow()
+{
+    if (millis() < isFltCheck)
+        return;
+    isFltCheck = millis() + 60000;
+    int radius;
+    const char *rest;
+    if (!isFltFollow(&radius, &rest) || !gps.location.isValid() || gps.location.age() >= 10000)
+        return;
+    if (isFltSet && aprsParse.distance(isFltLon, isFltLat, gps.location.lng(), gps.location.lat()) < 10.0)
+        return;
+    const char *f = aprsFilterNow(true);
+    aprsClient.print("#filter ");
+    aprsClient.print(f);
+    aprsClient.print("\r\n");
+    log_d("APRS-IS filter now %s", f);
+}
+
 boolean APRSConnect()
 {
     // Serial.println("Connect TCP Server");
@@ -3601,15 +3677,15 @@ boolean APRSConnect()
         if (strlen(config.igate_object) >= 3)
         {
             uint16_t passcode = aprsParse.passCode(config.igate_object);
-            login = "user " + String(config.igate_object) + " pass " + String(passcode, DEC) + " vers ESP32APRS_Audio V" + String(VERSION) + String(VERSION_BUILD) + " filter " + String(config.aprs_filter);
+            login = "user " + String(config.igate_object) + " pass " + String(passcode, DEC) + " vers ESP32APRS_Audio V" + String(VERSION) + String(VERSION_BUILD) + " filter " + String(aprsFilterNow(true));
         }
         else
         {
             uint16_t passcode = aprsParse.passCode(config.aprs_mycall);
             if (config.aprs_ssid == 0)
-                login = "user " + String(config.aprs_mycall) + " pass " + String(passcode, DEC) + " vers ESP32APRS_Audio V" + String(VERSION) + String(VERSION_BUILD) + " filter " + String(config.aprs_filter);
+                login = "user " + String(config.aprs_mycall) + " pass " + String(passcode, DEC) + " vers ESP32APRS_Audio V" + String(VERSION) + String(VERSION_BUILD) + " filter " + String(aprsFilterNow(true));
             else
-                login = "user " + String(config.aprs_mycall) + "-" + String(config.aprs_ssid) + " pass " + String(passcode, DEC) + " vers ESP32APRS_Audio V" + String(VERSION) + String(VERSION_BUILD) + " filter " + String(config.aprs_filter);
+                login = "user " + String(config.aprs_mycall) + "-" + String(config.aprs_ssid) + " pass " + String(passcode, DEC) + " vers ESP32APRS_Audio V" + String(VERSION) + String(VERSION_BUILD) + " filter " + String(aprsFilterNow(true));
         }
         aprsClient.println(login);
         // Serial.println(login);
@@ -9069,6 +9145,7 @@ void taskNetwork(void *pvParameters)
                 }
                 else
                 {
+                    aprsFilterFollow(); // SM0TGY
                     if (aprsClient.available())
                     {
                         pingTimeout = millis() + 300000;                // Reset ping timout
