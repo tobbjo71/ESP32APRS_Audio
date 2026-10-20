@@ -228,282 +228,12 @@ void handle_logout(AsyncWebServerRequest *request)
 	free(webString); // Free the allocated memory
 }
 
+// SM0TGY v1.22: main page is the mobile shell in ui_fork.cpp (served from flash, no heap buffer).
+extern void handle_ui_shell(AsyncWebServerRequest *request);
+extern void uiForkRoutes(AsyncWebServer &srv);
 void setMainPage(AsyncWebServerRequest *request)
 {
-	if (!request->authenticate(config.http_username, config.http_password))
-	{
-		return request->requestAuthentication();
-	}
-
-	// Using dynamic memory allocation instead of String
-	char *webString = allocateStringMemory(12000); // Initial buffer size, adjust as needed
-	if (!webString)
-	{
-		return; // Memory allocation failed
-	}
-
-	strcpy(webString, "<!DOCTYPE html>\n<html lang=\"en\">\n<head>\n");
-	strcat(webString, "<meta name=\"robots\" content=\"index\" />\n");
-	strcat(webString, "<meta name=\"robots\" content=\"follow\" />\n");
-	strcat(webString, "<meta name=\"language\" content=\"English\" />\n");
-	strcat(webString, "<meta http-equiv=\"Content-Type\" content=\"text/html; charset=utf-8\" />\n");
-	strcat(webString, "<meta name=\"viewport\" content=\"width=device-width, initial-scale=1\" />\n");
-	strcat(webString, "<meta name=\"GENERATOR\" content=\"configure 20230924\" />\n");
-	strcat(webString, "<meta name=\"Author\" content=\"Mr.Somkiat Nakhonthai (HS5TQA)\" />\n");
-	strcat(webString, "<meta name=\"Description\" content=\"Web Embedded Configuration\" />\n");
-	strcat(webString, "<meta name=\"KeyWords\" content=\"ESP32,ESP32C3,AFSK,APRS\" />\n");
-	strcat(webString, "<meta http-equiv=\"Cache-Control\" content=\"no-cache, no-store, must-revalidate\" />\n");
-	strcat(webString, "<meta http-equiv=\"pragma\" content=\"no-cache\" />\n");
-	strcat(webString, "<meta http-equiv=\"Expires\" content=\"0\" />\n");
-
-	char temp_buffer[512];
-	if (strlen(config.host_name) > 0)
-	{
-		snprintf(temp_buffer, sizeof(temp_buffer), "<title>%s</title>\n", config.host_name);
-		strcat(webString, temp_buffer);
-	}
-	else
-	{
-		strcat(webString, "<title>ESP32APRS_Audio</title>\n");
-	}
-
-	strcat(webString, "<link rel=\"stylesheet\" type=\"text/css\" href=\"style.css?v=" FORK_VERSION "\" />\n"); // SM0TGY: version busts browser cache
-	strcat(webString, "<script src=\"/jquery-3.7.1.js\"></script>\n");
-	strcat(webString, "<script type=\"text/javascript\">\n");
-	strcat(webString, "function selectTab(evt, tabName) {\n");
-	strcat(webString, "var i, tabcontent, tablinks;\n");
-	strcat(webString, "tablinks = document.getElementsByClassName(\"nav-tabs\");\n");
-	strcat(webString, "for (i = 0; i < tablinks.length; i++) {\n");
-	strcat(webString, "tablinks[i].className = tablinks[i].className.replace(\" active\", \"\");\n");
-	strcat(webString, "}\n");
-	strcat(webString, "\n");
-	strcat(webString, "//document.getElementById(tabName).style.display = \"block\";\n");
-	strcat(webString, "if (tabName == 'DashBoard') {\n");
-	strcat(webString, "$(\"#contentmain\").load(\"/dashboard\");\n");
-	strcat(webString, "} else if (tabName == 'Radio') {\n");
-	strcat(webString, "$(\"#contentmain\").load(\"/radio\");\n");
-	strcat(webString, "} else if (tabName == 'IGATE') {\n");
-	strcat(webString, "$(\"#contentmain\").load(\"/igate\");\n");
-	strcat(webString, "} else if (tabName == 'FILTER') {\n");
-	strcat(webString, "$(\"#contentmain\").load(\"/igate?part=filter\");\n");
-	strcat(webString, "} else if (tabName == 'DIGI') {\n");
-	strcat(webString, "$(\"#contentmain\").load(\"/digi\");\n");
-	strcat(webString, "} else if (tabName == 'TRACKER') {\n");
-	strcat(webString, "$(\"#contentmain\").load(\"/tracker\");\n");
-	strcat(webString, "} else if (tabName == 'RX') {\n");
-	strcat(webString, "$(\"#contentmain\").load(\"/tnc2\");\n");
-	strcat(webString, "} else if (tabName == 'GNSS') {\n");
-	strcat(webString, "$(\"#contentmain\").load(\"/gnss\");\n");
-#ifndef FORK_SLIM
-	strcat(webString, "} else if (tabName == 'WX') {\n");
-	strcat(webString, "$(\"#contentmain\").load(\"/wx\");\n");
-	strcat(webString, "} else if (tabName == 'TLM') {\n");
-	strcat(webString, "$(\"#contentmain\").load(\"/tlm\");\n");
-	strcat(webString, "} else if (tabName == 'SENSOR') {\n");
-	strcat(webString, "$(\"#contentmain\").load(\"/sensor\");\n");
-	strcat(webString, "} else if (tabName == 'VPN') {\n");
-	strcat(webString, "$(\"#contentmain\").load(\"/vpn\");\n");
-#endif // FORK_SLIM
-#ifdef MQTT
-	strcat(webString, "} else if (tabName == 'MQTT') {\n");
-	strcat(webString, "$(\"#contentmain\").load(\"/mqtt\");\n");
-#endif
-	strcat(webString, "} else if (tabName == 'MSG') {\n");
-	strcat(webString, "$(\"#contentmain\").load(\"/msg\");\n");
-	strcat(webString, "} else if (tabName == 'WiFi') {\n");
-	strcat(webString, "$(\"#contentmain\").load(\"/wireless\");\n");
-	strcat(webString, "} else if (tabName == 'MOD') {\n");
-	strcat(webString, "$(\"#contentmain\").load(\"/mod\");\n");
-	strcat(webString, "} else if (tabName == 'System') {\n");
-	strcat(webString, "$(\"#contentmain\").load(\"/system\");\n");
-	strcat(webString, "} else if (tabName == 'File') {\n");
-	strcat(webString, "$(\"#contentmain\").load(\"/storage\");\n");
-	strcat(webString, "} else if (tabName == 'About') {\n");
-	strcat(webString, "$(\"#contentmain\").load(\"/about\");\n");
-	strcat(webString, "}\n");
-	strcat(webString, "\n");
-	strcat(webString, "if (evt != null) evt.currentTarget.className += \" active\";\n");
-	strcat(webString, "}\n");
-	strcat(webString, "if (!!window.EventSource) {");
-	strcat(webString, "var source = new EventSource('/eventHeard');");
-
-	strcat(webString, "source.addEventListener('open', function(e) {");
-	strcat(webString, "console.log(\"Events Connected\");");
-	strcat(webString, "}, false);");
-	strcat(webString, "source.addEventListener('error', function(e) {");
-	strcat(webString, "if (e.target.readyState != EventSource.OPEN) {");
-	strcat(webString, "console.log(\"Events Disconnected\");");
-	strcat(webString, "}\n}, false);");
-	strcat(webString, "source.addEventListener('lastHeard', function(e) {");
-	// strcat(webString, "console.log(\"lastHeard\", e.data);");
-	strcat(webString, "var lh=document.getElementById(\"aprsTable\");");
-	strcat(webString, "if(lh != null) {renderTable(e.data);}");
-	strcat(webString, "}, false);\n}");
-	strcat(webString, "if (!!window.EventSource) {");
-	strcat(webString, "var source = new EventSource('/eventMsg');");
-
-	strcat(webString, "source.addEventListener('open', function(e) {");
-	strcat(webString, "console.log(\"Events MSG Connected\");");
-	strcat(webString, "}, false);");
-	strcat(webString, "source.addEventListener('error', function(e) {");
-	strcat(webString, "if (e.target.readyState != EventSource.OPEN) {");
-	strcat(webString, "console.log(\"Events MSG Disconnected\");");
-	strcat(webString, "}\n}, false);");
-	strcat(webString, "source.addEventListener('chatMsg', function(e) {");
-	// strcat(webString, "console.log(\"lastHeard\", e.data);");
-	strcat(webString, "var lh=document.getElementById(\"chatMsg\");");
-	strcat(webString, "if(lh != null) {lh.innerHTML = e.data;}");
-	strcat(webString, "}, false);\n}\n");
-	//strcat(webString, "</script>\n");
-
-	strcat(webString, "let sortDirection = {};\n");
-	strcat(webString, "let currentSortKey = \"time\";\n\n");
-	strcat(webString, "function renderTable(raw) {\n");
-	// strcat(webString, "const tableBody = document.getElementById(\"aprsTableBody\");\n");
-	// //strcat(webString, "const tableBody = document.querySelector(\"#aprsTable tbody\");\n");
-	// strcat(webString, "if(tableBody == null) {return;}\n");
-	strcat(webString, "var data=JSON.parse(raw);\n");	
-	strcat(webString, "lastHeardSort(data);\n");
-	strcat(webString, "document.querySelectorAll(\"#aprsTable th[data-sort]\")\n");
-	strcat(webString, ".forEach(header => {\n\n");
-	strcat(webString, "header.addEventListener(\"click\", () => {\n\n");
-	strcat(webString, "const key = header.dataset.sort;\n\n");
-	strcat(webString, "sortDirection[key] = !sortDirection[key];\n");
-	strcat(webString, "currentSortKey = key;\n\n");	
-	strcat(webString, "clearArrows();\n\n");
-	strcat(webString, "const arrowSpan = header.querySelector(\".arrow\");\n");
-	strcat(webString, "arrowSpan.textContent = sortDirection[key] ? \"▲\" : \"▼\";\n\n");
-	strcat(webString, "lastHeardSort(data);\n");
-	strcat(webString, "printLastHeard(data);\n");
-	strcat(webString, "});\n\n");
-	strcat(webString, "});\n\n");
-	strcat(webString, "printLastHeard(data);\n");
-	strcat(webString, "}\n\n");
-
-	strcat(webString, "function printLastHeard(data) {\n");
-	strcat(webString, "const tableBody = document.getElementById(\"aprsTableBody\");\n");
-	//strcat(webString, "const tableBody = document.querySelector(\"#aprsTable tbody\");\n");
-	strcat(webString, "if(tableBody == null) {return;}\n");
-	strcat(webString, "tableBody.innerHTML = \"\";\n");
-	strcat(webString, "data.forEach(row => {\n");
-	strcat(webString, "const tr = document.createElement(\"tr\");\n");
-	strcat(webString, "tr.innerHTML = `\n");
-	strcat(webString, "<td>${row.time}</td>\n");
-	strcat(webString, "<td><img src=\"/symbols/icons/${row.icon}\"></td>\n");
-	strcat(webString, "<td>${row.callsign}</td>\n");
-	strcat(webString, "<td align=\"left\">${row.path}</td>\n");
-	strcat(webString, "<td>${row.dx !== null ? row.dx : \"-\"}</td>\n");
-	strcat(webString, "<td>${row.packet}</td>\n");
-	strcat(webString, "<td style=\"color:green;\">${row.audio !== '-' ? row.audio + \"dBV\" : \"-\"}</td>\n");
-	strcat(webString, "`;\n");
-	strcat(webString, "tableBody.appendChild(tr);\n");
-	strcat(webString, "});\n");
-	strcat(webString, "}\n\n");
-
-	strcat(webString, "function clearArrows() {\n");
-	strcat(webString, "document.querySelectorAll(\".arrow\").forEach(a => a.textContent = \"\");\n");
-	strcat(webString, "}\n\n");
-	strcat(webString, "function lastHeardSort(data) {\nvar key=currentSortKey;\n");
-	strcat(webString, "data.sort((a, b) => {\n\n");
-	strcat(webString, "let valA = a[key];\n");
-	strcat(webString, "let valB = b[key];\n\n");
-	strcat(webString, "if (key === \"time\") {\n");
-	//strcat(webString, "// Parse time in dd hh:mm:ss format\n");
-	strcat(webString, "const [dayTime, timePart] = valA.split(' ');\n");
-	strcat(webString, "const [hours, minutes, seconds] = timePart.split(':');\n");
-	strcat(webString, "valA = parseInt(dayTime) * 86400 + parseInt(hours) * 3600 + parseInt(minutes) * 60 + parseInt(seconds);\n");
-	//strcat(webString, "                \n");
-	strcat(webString, "const [dayTimeB, timePartB] = valB.split(' ');\n");
-	strcat(webString, "const [hoursB, minutesB, secondsB] = timePartB.split(':');\n");
-	strcat(webString, "valB = parseInt(dayTimeB) * 86400 + parseInt(hoursB) * 3600 + parseInt(minutesB) * 60 + parseInt(secondsB);\n");
-	strcat(webString, "}\n\n");
-	strcat(webString, "if (valA === null) return 1;\n");
-	strcat(webString, "if (valB === null) return -1;\n\n");
-	strcat(webString, "if (valA < valB) return sortDirection[key] ? -1 : 1;\n");
-	strcat(webString, "if (valA > valB) return sortDirection[key] ? 1 : -1;\n");
-	strcat(webString, "return 0;\n");
-	strcat(webString, "});\n\n");
-	strcat(webString, "}\n\n");
-	strcat(webString, "</script>\n");
-	strcat(webString, "</head>\n");
-	//strcat(webString, "\n");
-	strcat(webString, "<body onload=\"selectTab(event, 'DashBoard')\">\n");
-	strcat(webString, "\n");
-	strcat(webString, "<div class=\"container\">\n");
-	strcat(webString, "<div class=\"header\">\n");
-	// strcat(webString, "<div style=\"font-size: 8px; text-align: right; padding-right: 8px;\">ESP32IGate Firmware V" + String(VERSION) + "</div>\n");
-	// strcat(webString, "<div style=\"font-size: 8px; text-align: right; padding-right: 8px;\"><a href=\"/logout\">[LOG OUT]</a></div>\n");
-	if (strlen(config.host_name) > 0)
-	{
-		snprintf(temp_buffer, sizeof(temp_buffer), "<h1>%s</h1>\n", config.host_name);
-		strcat(webString, temp_buffer);
-	}
-	else
-	{
-		strcat(webString, "<h1>ESP32APRS_Audio</h1>\n");
-	}
-	strcat(webString, "<div style=\"font-size: 8px; text-align: right; padding-right: 8px;\"><a href=\"/logout\">[LOG OUT]</a></div>\n");
-	strcat(webString, "<div class=\"row\">\n");
-	strcat(webString, "<ul class=\"nav nav-tabs\" style=\"margin: 5px;\">\n");
-	strcat(webString, "<button class=\"nav-tabs\" onclick=\"selectTab(event, 'DashBoard')\">DashBoard</button>\n");
-	strcat(webString, "<button class=\"nav-tabs\" onclick=\"selectTab(event, 'Radio')\" id=\"btnRadio\">Radio</button>\n");
-	strcat(webString, "<button class=\"nav-tabs\" onclick=\"selectTab(event, 'IGATE')\">IGATE</button>\n");
-	strcat(webString, "<button class=\"nav-tabs\" onclick=\"selectTab(event, 'FILTER')\">FILTER</button>\n");
-	strcat(webString, "<button class=\"nav-tabs\" onclick=\"selectTab(event, 'DIGI')\">DIGI</button>\n");
-	strcat(webString, "<button class=\"nav-tabs\" onclick=\"selectTab(event, 'TRACKER')\">TRACKER</button>\n");
-	strcat(webString, "<button class=\"nav-tabs\" onclick=\"selectTab(event, 'GNSS')\">GNSS</button>\n");
-	strcat(webString, "<button class=\"nav-tabs\" onclick=\"selectTab(event, 'RX')\">RX</button>\n");
-#ifndef FORK_SLIM
-	strcat(webString, "<button class=\"nav-tabs\" onclick=\"selectTab(event, 'WX')\">WX</button>\n");
-	strcat(webString, "<button class=\"nav-tabs\" onclick=\"selectTab(event, 'TLM')\">TLM</button>\n");
-	strcat(webString, "<button class=\"nav-tabs\" onclick=\"selectTab(event, 'SENSOR')\">SENSOR</button>\n");
-	strcat(webString, "<button class=\"nav-tabs\" onclick=\"selectTab(event, 'VPN')\">VPN</button>\n");
-#endif // FORK_SLIM
-#ifdef MQTT
-	strcat(webString, "<button class=\"nav-tabs\" onclick=\"selectTab(event, 'MQTT')\">MQTT</button>\n");
-#endif
-	strcat(webString, "<button class=\"nav-tabs\" onclick=\"selectTab(event, 'MSG')\">MSG</button>\n");
-	strcat(webString, "<button class=\"nav-tabs\" onclick=\"selectTab(event, 'WiFi')\">WiFi</button>\n");
-	strcat(webString, "<button class=\"nav-tabs\" onclick=\"selectTab(event, 'MOD')\">MOD</button>\n");
-	strcat(webString, "<button class=\"nav-tabs\" onclick=\"selectTab(event, 'System')\">System</button>\n");
-	strcat(webString, "<button class=\"nav-tabs\" onclick=\"selectTab(event, 'File')\">File</button>\n");
-	strcat(webString, "<button class=\"nav-tabs\" onclick=\"selectTab(event, 'About')\">About</button>\n");
-	strcat(webString, "</ul>\n");
-	strcat(webString, "</div>\n");
-	strcat(webString, "</div>\n");
-	strcat(webString, "\n");
-
-	strcat(webString, "<div class=\"contentwide\" id=\"contentmain\">\n");
-	strcat(webString, "\n");
-	strcat(webString, "</div>\n");
-	strcat(webString, "<br />\n");
-	strcat(webString, "<div class=\"footer\">\n");
-	strcat(webString, "ESP32APRS_Audio Web Configuration<br />Copy right ©2023.\n");
-	strcat(webString, "<br />\n");
-	strcat(webString, "</div>\n");
-	strcat(webString, "</div>\n");
-	strcat(webString, "<!-- <script type=\"text/javascript\" src=\"/nice-select.min.js\"></script> -->\n");
-	strcat(webString, "<script type=\"text/javascript\">\n");
-	strcat(webString, "var selectize = document.querySelectorAll('select')\n");
-	strcat(webString, "var options = { searchable: true };\n");
-	strcat(webString, "selectize.forEach(function (select) {\n");
-	strcat(webString, "if (select.length > 30 && null === select.onchange && !select.name.includes(\"ExtendedId\")) {\n");
-	strcat(webString, "select.classList.add(\"small\", \"selectize\");\n");
-	strcat(webString, "tabletd = select.closest('td');\n");
-	strcat(webString, "tabletd.style.cssText = 'overflow-x:unset';\n");
-	strcat(webString, "NiceSelect.bind(select, options);\n");
-	strcat(webString, "}\n");
-	strcat(webString, "});\n");
-	strcat(webString, "</script>\n");
-	strcat(webString, "</body>\n");
-	strcat(webString, "</html>");
-
-
-	AsyncWebServerResponse *response = beginBufferResponse(request, webString);
-	response->addHeader("Sensor", "content");
-	response->addHeader("Cache-Control", "no-cache");
-	request->send(response);
-	// webString is freed when the request completes
+	handle_ui_shell(request);
 	lastHeardTimeout = 0;
 	lastHeard_Flag = true;
 }
@@ -515,7 +245,7 @@ void setMainPage(AsyncWebServerRequest *request)
 void handle_css(AsyncWebServerRequest *request)
 {
 	// SM0TGY: own style (olive/sand), mobile first; forms stack to one column below 700 px.
-	static const char css[] PROGMEM = R"CSS(:root{--o9:#2F3820;--o7:#4C5A2E;--o5:#6E7F45;--s0:#F7F3E8;--s1:#EFE7D3;--s3:#D9CCA8;--ln:#CFC3A3;--ink:#23251C;--ink2:#5A5B4C;--card:#FFFDF7;--och:#B5651D;--red:#A4372C}*{box-sizing:border-box}html{-webkit-text-size-adjust:100%}body{margin:0;background:var(--s0);color:var(--ink);font:15px/1.4 system-ui,-apple-system,"Segoe UI",Roboto,sans-serif}body,font{color:var(--ink)}.container{max-width:960px;margin:0 auto;background:var(--s0)}.header{background:var(--o9);color:var(--s0);padding:10px 12px 0}h1{margin:4px 0 8px;font-size:20px;text-align:left;color:var(--s0);font-family:ui-monospace,"SF Mono",Menlo,Consolas,monospace;letter-spacing:.5px}.header a,.header a:link,.header a:visited{color:var(--s3)!important;font-size:12px}.row{display:block}ul.nav{display:flex;flex-wrap:wrap;gap:6px;margin:0;padding:6px 0 10px;float:none;list-style:none}.nav-tabs>button{font:600 14px system-ui,-apple-system,sans-serif;min-height:40px;padding:0 12px;border:1px solid var(--o7);border-radius:8px;background:var(--o7);color:var(--s0);cursor:pointer}.nav-tabs>button:hover{background:var(--o5)}.nav-tabs>button.active,.nav-tabs>button.active:hover{background:var(--s0);color:var(--o9);border-color:var(--s0)}.contentwide{padding:12px 10px;color:var(--ink);background:var(--s0);text-align:left;font-size:15px!important}.contentwide h2{font-size:17px;margin:0 0 8px}.content{margin:0;padding:0;color:var(--ink);font-size:14px}.nav-status{float:none;width:auto;margin:0 0 10px;display:flex;flex-wrap:wrap;gap:8px}.nav-status table{width:auto;min-width:160px}.footer{background:var(--s1);color:var(--ink2);font-size:12px;text-align:center;padding:10px;clear:both}a{text-decoration:none}a:link,a:visited{color:var(--o7);font-weight:600}table{border-collapse:collapse;border:1px solid var(--s3);background:var(--card);color:var(--ink);width:100%;font-size:14px;margin:0 0 12px;text-align:left}table th{background:var(--o7);color:var(--s0);font-size:15px;font-weight:700;padding:8px 10px;text-align:left;border:0}table th *{color:var(--s0)}table td{color:var(--ink);padding:6px 8px;border-top:1px solid var(--s1);vertical-align:middle}table td[align=right]{font-weight:600;color:var(--ink2);width:34%}table tr:nth-child(even),table tr:nth-child(odd){background:var(--card)}fieldset{border:1px solid var(--s3);border-radius:8px;padding:6px 8px}legend{font-size:13px;color:var(--ink2);padding:0 4px}input,select,textarea{font:16px system-ui,-apple-system,sans-serif;color:var(--ink);max-width:100%;border:1px solid var(--ln);border-radius:6px;background:#fff;padding:6px 8px;min-height:38px}input[type=checkbox],input[type=radio]{min-height:0;width:20px;height:20px;vertical-align:middle;accent-color:var(--o7)}.button,button.button,input[type=submit]{min-height:44px;padding:0 18px;border:0;border-radius:8px;background:var(--o7);color:var(--s0);font:700 15px system-ui,-apple-system,sans-serif;cursor:pointer}.button:hover{background:var(--o9)}.button:disabled,button[disabled]{background:var(--s3);color:var(--ink2)}.switch{position:relative;display:inline-block;width:46px;height:26px;vertical-align:middle}.switch input{opacity:0;width:0;height:0}.slider{position:absolute;cursor:pointer;inset:0;background:var(--ln);transition:.3s}.slider:before{position:absolute;content:"";height:20px;width:20px;left:3px;bottom:3px;background:#fff;transition:.3s}input:checked+.slider{background:var(--o7)}input:checked+.slider:before{transform:translateX(20px)}.slider.round{border-radius:26px}.slider.round:before{border-radius:50%}.toggle{position:absolute;margin-left:-9999px;visibility:hidden}#bar,#prgbar{background:var(--s1);border-radius:8px}#bar{background:var(--o5);width:0;height:14px;border-radius:8px}#tail{height:60vh;width:100%;overflow:auto;color:#B8D07A;background:var(--o9);font:12px ui-monospace,Menlo,monospace}#lastHeard{overflow-x:auto}.nice-select.small,.nice-select-dropdown li.option{height:36px!important;min-height:36px!important;line-height:36px!important}@media (max-width:700px){ #contentmain table:not(#aprsTable),#contentmain table:not(#aprsTable)>tbody,#contentmain table:not(#aprsTable)>tbody>tr,#contentmain table:not(#aprsTable)>tbody>tr>td,#contentmain table:not(#aprsTable)>tbody>tr>th,#contentmain table:not(#aprsTable)>tr,#contentmain table:not(#aprsTable)>tr>td,#contentmain table:not(#aprsTable)>tr>th,#contentmain table:not(#aprsTable)>th{display:block;width:auto!important} #contentmain td{border:0;white-space:normal!important;text-align:left!important} #contentmain td[align=right]{padding:10px 8px 0;font-size:13px} #contentmain td[colspan="2"],#contentmain td[align=center]{text-align:left!important} #contentmain input:not([type=checkbox]):not([type=radio]),#contentmain select{width:100%} #contentmain input[size]{width:100%!important} .contentwide [style*="font-size"]{font-size:inherit!important}})CSS";
+	static const char css[] PROGMEM = R"CSS(:root{--o9:#2F3820;--o7:#4C5A2E;--o5:#6E7F45;--s0:#F7F3E8;--s1:#EFE7D3;--s3:#D9CCA8;--ln:#CFC3A3;--ink:#23251C;--ink2:#5A5B4C;--card:#FFFDF7;--och:#B5651D;--red:#A4372C}*{box-sizing:border-box}html{-webkit-text-size-adjust:100%}body{margin:0;background:var(--s0);color:var(--ink);font:15px/1.4 system-ui,-apple-system,"Segoe UI",Roboto,sans-serif}body,font{color:var(--ink)}.container{max-width:960px;margin:0 auto;background:var(--s0)}.header{background:var(--o9);color:var(--s0);padding:10px 12px 0}h1{margin:4px 0 8px;font-size:20px;text-align:left;color:var(--s0);font-family:ui-monospace,"SF Mono",Menlo,Consolas,monospace;letter-spacing:.5px}.header a,.header a:link,.header a:visited{color:var(--s3)!important;font-size:12px}.row{display:block}ul.nav{display:flex;flex-wrap:wrap;gap:6px;margin:0;padding:6px 0 10px;float:none;list-style:none}.nav-tabs>button{font:600 14px system-ui,-apple-system,sans-serif;min-height:40px;padding:0 12px;border:1px solid var(--o7);border-radius:8px;background:var(--o7);color:var(--s0);cursor:pointer}.nav-tabs>button:hover{background:var(--o5)}.nav-tabs>button.active,.nav-tabs>button.active:hover{background:var(--s0);color:var(--o9);border-color:var(--s0)}.contentwide{padding:12px 10px;color:var(--ink);background:var(--s0);text-align:left;font-size:15px!important}.contentwide h2{font-size:17px;margin:0 0 8px}.content{margin:0;padding:0;color:var(--ink);font-size:14px}.nav-status{float:none;width:auto;margin:0 0 10px;display:flex;flex-wrap:wrap;gap:8px}.nav-status table{width:auto;min-width:160px}.footer{background:var(--s1);color:var(--ink2);font-size:12px;text-align:center;padding:10px;clear:both}a{text-decoration:none}a:link,a:visited{color:var(--o7);font-weight:600}table{border-collapse:collapse;border:1px solid var(--s3);background:var(--card);color:var(--ink);width:100%;font-size:14px;margin:0 0 12px;text-align:left}table th{background:var(--o7);color:var(--s0);font-size:15px;font-weight:700;padding:8px 10px;text-align:left;border:0}table th *{color:var(--s0)}table td{color:var(--ink);padding:6px 8px;border-top:1px solid var(--s1);vertical-align:middle}table td[align=right]{font-weight:600;color:var(--ink2);width:34%}table tr:nth-child(even),table tr:nth-child(odd){background:var(--card)}fieldset{border:1px solid var(--s3);border-radius:8px;padding:6px 8px}legend{font-size:13px;color:var(--ink2);padding:0 4px}input,select,textarea{font:16px system-ui,-apple-system,sans-serif;color:var(--ink);max-width:100%;border:1px solid var(--ln);border-radius:6px;background:#fff;padding:6px 8px;min-height:38px}input[type=checkbox],input[type=radio]{min-height:0;width:20px;height:20px;vertical-align:middle;accent-color:var(--o7)}.button,button.button,input[type=submit]{min-height:44px;padding:0 18px;border:0;border-radius:8px;background:var(--o7);color:var(--s0);font:700 15px system-ui,-apple-system,sans-serif;cursor:pointer}.button:hover{background:var(--o9)}.button:disabled,button[disabled]{background:var(--s3);color:var(--ink2)}.switch{position:relative;display:inline-block;width:46px;height:26px;vertical-align:middle}.switch input{opacity:0;width:0;height:0}.slider{position:absolute;cursor:pointer;inset:0;background:var(--ln);transition:.3s}.slider:before{position:absolute;content:"";height:20px;width:20px;left:3px;bottom:3px;background:#fff;transition:.3s}input:checked+.slider{background:var(--o7)}input:checked+.slider:before{transform:translateX(20px)}.slider.round{border-radius:26px}.slider.round:before{border-radius:50%}.toggle{position:absolute;margin-left:-9999px;visibility:hidden}#bar,#prgbar{background:var(--s1);border-radius:8px}#bar{background:var(--o5);width:0;height:14px;border-radius:8px}#tail{height:60vh;width:100%;overflow:auto;color:#B8D07A;background:var(--o9);font:12px ui-monospace,Menlo,monospace}#lastHeard{overflow-x:auto}.nice-select.small,.nice-select-dropdown li.option{height:36px!important;min-height:36px!important;line-height:36px!important}.mono{font-family:ui-monospace,"SF Mono",Menlo,Consolas,monospace}.top{background:var(--o9);color:var(--s0);padding:12px 14px 10px}.top1{display:flex;justify-content:space-between;align-items:baseline;gap:8px}.big{font-size:21px;font-weight:700;letter-spacing:.5px}.sub{font-size:13px;color:var(--s3)}.chips{display:flex;flex-wrap:wrap;gap:6px;margin-top:8px}.chip{display:inline-flex;align-items:center;gap:6px;padding:4px 10px;border-radius:999px;background:var(--o7);color:var(--s0);font-size:13px;font-weight:600}.chip i{width:8px;height:8px;border-radius:50%;background:#B8D07A}.chip.tx{background:var(--och)}.chip.tx i{background:#FFE2C2}.chip.w{background:var(--red)}.chip.w i{background:#F3C9C2}.chip.off{background:#5A5B4C}.chip.off i{background:var(--ln)}.back{display:flex;align-items:center;gap:12px;padding:0 12px;background:var(--s1);border-bottom:1px solid var(--s3);font-weight:700}.back[hidden]{display:none}.back a{min-height:44px;display:flex;align-items:center}body{padding-bottom:80px}.bnav{position:fixed;left:0;right:0;bottom:0;z-index:10;display:flex;justify-content:center;background:var(--s1);border-top:1px solid var(--s3);padding-bottom:env(safe-area-inset-bottom)}.bnav button{flex:1;max-width:150px;background:none;border:0;display:flex;flex-direction:column;align-items:center;gap:2px;padding:8px 0;font:600 11px system-ui,-apple-system,sans-serif;color:var(--ink2);min-height:54px;cursor:pointer}.bnav button.on{color:var(--o9)}.bnav button.on svg{stroke-width:2.6}h2.pg{display:flex;justify-content:space-between;align-items:baseline;gap:8px;font-size:19px;margin:4px 0 10px}h2.pg span{font-size:13px;font-weight:400;color:var(--ink2)}.muted{color:var(--ink2);font-size:14px}.card{background:var(--card);border:1px solid var(--s3);border-radius:12px;padding:10px 12px;display:flex;gap:12px;align-items:flex-start;margin-bottom:8px}.card .ic{width:40px;height:40px;border-radius:10px;background:var(--s1);display:flex;align-items:center;justify-content:center;flex:none}.card .b{flex:1;min-width:0;display:flex;flex-direction:column;gap:3px}.card .r1{display:flex;justify-content:space-between;gap:8px}.card .cs{font-size:17px;font-weight:700}.card .t,.card .m{font-size:13px;color:var(--ink2)}.lvl{display:flex;align-items:center;gap:8px}.lvl div{flex:1;height:6px;background:var(--s1);border-radius:3px;overflow:hidden}.lvl b{display:block;height:6px;background:var(--o5)}.lvl span{font-size:12px;color:var(--ink2)}.gh{margin:10px 4px 6px;font-size:12px;font-weight:700;letter-spacing:.8px;text-transform:uppercase;color:var(--ink2)}.grp{background:var(--card);border:1px solid var(--s3);border-radius:12px;overflow:hidden;margin-bottom:6px}.grp a{display:flex;align-items:center;gap:10px;padding:0 14px;min-height:50px;border-top:1px solid var(--s1);color:var(--ink)!important;font-weight:600}.grp a:first-child{border-top:0}.grp a span{flex:1;text-align:right;font-size:13px;font-weight:400;color:var(--ink2);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}.grp a svg{flex:none;color:var(--ink2)}.seg{display:flex;gap:6px;flex-wrap:wrap;margin:10px 0}.seg button{min-height:40px;padding:0 14px;border-radius:8px;border:1px solid var(--s3);background:var(--card);color:var(--ink);font:600 14px system-ui,-apple-system,sans-serif;cursor:pointer}.seg button.on{background:var(--o7);border-color:var(--o7);color:var(--s0)}.pk{background:var(--card);border:1px solid var(--s3);border-radius:10px;padding:8px 10px;margin-bottom:6px}.pk .h{display:flex;gap:8px;align-items:center;font-size:13px;color:var(--ink2)}.tag{font-size:12px;font-weight:700;padding:1px 8px;border-radius:6px;color:var(--s0);background:var(--o7)}.tag.tx{background:var(--och)}.pk .raw{font:13px ui-monospace,Menlo,monospace;word-break:break-all;margin-top:4px}.tiles{display:grid;grid-template-columns:repeat(auto-fill,minmax(150px,1fr));gap:8px;margin-bottom:8px}.tile{background:var(--card);border:1px solid var(--s3);border-radius:12px;padding:10px 12px}.tile small{display:block;font-size:12px;font-weight:600;color:var(--ink2)}.tile b{display:block;font-size:18px}.tile span{font-size:12px;color:var(--ink2)}a.button{display:inline-flex;align-items:center;color:var(--s0)!important}.radar{background:var(--card);border:1px solid var(--s3);border-radius:12px;padding:6px;max-width:520px}.radar svg{width:100%;height:auto;display:block}.symov{position:fixed;inset:0;background:rgba(35,37,28,.55);z-index:20;display:flex;align-items:flex-end;justify-content:center}.symov[hidden]{display:none}.symbox{background:var(--s0);width:100%;max-width:640px;max-height:82vh;overflow:auto;border-radius:14px 14px 0 0;padding:12px 12px 24px}.symhd{display:flex;justify-content:space-between;align-items:center;font-size:17px}.symgrid{display:grid;grid-template-columns:repeat(auto-fill,minmax(44px,1fr));gap:4px}.symgrid button{height:44px;border:1px solid var(--s3);border-radius:8px;background:var(--card);cursor:pointer;padding:0}.symgrid img{width:24px;height:24px;vertical-align:middle}.nav-status{align-items:flex-start}@media (min-width:760px){#hl{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:8px}#hl .card{margin:0}}@media (max-width:700px){ #contentmain table:not(#aprsTable),#contentmain table:not(#aprsTable)>tbody,#contentmain table:not(#aprsTable)>tbody>tr,#contentmain table:not(#aprsTable)>tbody>tr>td,#contentmain table:not(#aprsTable)>tbody>tr>th,#contentmain table:not(#aprsTable)>tr,#contentmain table:not(#aprsTable)>tr>td,#contentmain table:not(#aprsTable)>tr>th,#contentmain table:not(#aprsTable)>th{display:block;width:auto!important} #contentmain td{border:0;white-space:normal!important;text-align:left!important} #contentmain td[align=right]{padding:10px 8px 0;font-size:13px} #contentmain td[colspan="2"],#contentmain td[align=center]{text-align:left!important} #contentmain input:not([type=checkbox]):not([type=radio]),#contentmain select{width:100%} #contentmain input[size]{width:100%!important} .contentwide [style*="font-size"]{font-size:inherit!important}})CSS";
 
 	request->send_P(200, "text/css", css);
 }
@@ -1097,12 +827,10 @@ void handle_symbol(AsyncWebServerRequest *request)
 		}
 		strcat(web, "</tr>");
 		strcat(web, "</table>\n");
-		size_t len = strlen(web);
-		AsyncWebServerResponse *response = request->beginResponse_P(200, String(F("text/html")), (const uint8_t *)web, len);
+		AsyncWebServerResponse *response = beginBufferResponse(request, web); // SM0TGY: freed when sent (was freed before sending)
 		response->addHeader("Symbol", "content");
 		response->addHeader("Cache-Control", "no-cache");
 		request->send(response);
-		free(web);
 	}
 }
 
@@ -1335,11 +1063,11 @@ static void jsonEscapeCopy(char *dest, size_t destSize, const char *src)
 	dest[j] = '\0';
 }
 
-void event_lastHeard(bool gethtml)
+// SM0TGY: JSON list of heard stations, shared by the EventSource push and GET /heard.json.
+// Returns a heap buffer the caller frees (or hands to beginBufferResponse), or NULL.
+extern bool getPkgListCopy(int idx, pkgListType *out, char *raw, size_t cap);
+char *buildLastHeardJson()
 {
-	// log_d("Event count: %d",lastheard_events.count());
-	// if (lastheard_events.count() == 0)
-	//	return;
 
 	struct pbuf_t aprs;
 	ParseAPRS aprsParse;
@@ -1351,7 +1079,7 @@ void event_lastHeard(bool gethtml)
 	char *html = allocateStringMemory(16384); // Initial buffer size, adjust as needed
 	if (html==nullptr)
 	{
-		return; // Memory allocation failed
+		return NULL; // Memory allocation failed
 	}
 	time_t timeNow = time(NULL);
 
@@ -1362,7 +1090,10 @@ void event_lastHeard(bool gethtml)
 	{
 		if (i >= PKGLISTSIZE)
 			break;
-		pkgListType pkg = getPkgList(i);
+		pkgListType pkg;
+		char rawCopy[300];
+		if (!getPkgListCopy(i, &pkg, rawCopy, sizeof(rawCopy)))
+			continue;
 		if (pkg.time > 0)
 		{
 			// if (pkg.raw == nullptr || pkg.length == 0)
@@ -1570,12 +1301,12 @@ void event_lastHeard(bool gethtml)
 						}
 						double dtmp = aprsParse.direction(lon, lat, aprs.lng, aprs.lat);
 						double dist = aprsParse.distance(lon, lat, aprs.lng, aprs.lat);
-						snprintf(temp_html, sizeof(temp_html), "\"dx\":\"%.1fkm/%.0f°\",", dist, dtmp);
+						snprintf(temp_html, sizeof(temp_html), "\"dx\":\"%.1fkm/%.0f°\",\"km\":%.2f,\"brg\":%.0f,", dist, dtmp, dist, dtmp);
 						strcat(html, temp_html);
 					}
 					else
 					{
-						strcat(html, "\"dx\":\"-\",");
+						strcat(html, "\"dx\":\"-\",\"km\":-1,\"brg\":0,");
 					}
 					snprintf(temp_html, sizeof(temp_html), "\"packet\":\"%d\",", packet);
 					strcat(html, temp_html);
@@ -1607,10 +1338,48 @@ void event_lastHeard(bool gethtml)
 			}
 		}
 	}
-	html[strlen(html) - 1] = '\0'; // Remove the last comma
-	if (html[0] == '[')
-	strcat(html, "]");
+	size_t hl = strlen(html);
+	if (hl > 1)
+		html[hl - 1] = '\0'; // Remove the last comma
+	else
+		html[0] = '\0';
+	strcpy(html + strlen(html), html[0] ? "]" : "[]");
+	return html;
+}
 
+// SM0TGY: the JSON is built here (loop task, large stack) and cached for GET /heard.json,
+// so the web server task never runs the APRS parser on its smaller stack.
+static char *heardCache = NULL;
+static SemaphoreHandle_t heardMux = NULL;
+char *heardCacheDup()
+{
+	if (heardMux == NULL)
+		return NULL;
+	char *r = NULL;
+	xSemaphoreTake(heardMux, portMAX_DELAY);
+	if (heardCache)
+		r = strdup(heardCache);
+	xSemaphoreGive(heardMux);
+	return r;
+}
+
+void event_lastHeard(bool gethtml)
+{
+	char *html = buildLastHeardJson();
+	if (html == NULL)
+		return;
+	if (heardMux == NULL)
+		heardMux = xSemaphoreCreateMutex();
+	char *copy = strdup(html);
+	if (copy && heardMux)
+	{
+		xSemaphoreTake(heardMux, portMAX_DELAY);
+		free(heardCache);
+		heardCache = copy;
+		xSemaphoreGive(heardMux);
+	}
+	else
+		free(copy);
 	size_t len = strlen(html);
 	// char *info = (char *)calloc(len + 1, sizeof(char));
 	// if (info)
@@ -5885,6 +5654,7 @@ void handle_mod(AsyncWebServerRequest *request)
 	}
 }
 
+extern const char UI_SYSTILES[];
 void handle_system(AsyncWebServerRequest *request)
 {
 	if (!request->authenticate(config.http_username, config.http_password))
@@ -6525,7 +6295,8 @@ void handle_system(AsyncWebServerRequest *request)
 			return; // Memory allocation failed
 		}
 
-		strcpy(html, "<script type=\"text/javascript\">\n");
+		strcpy_P(html, UI_SYSTILES); // SM0TGY: status tiles and /diag link on top
+		strcat(html, "<script type=\"text/javascript\">\n");
 		strcat(html, "$('form').submit(function (e) {\n");
 		strcat(html, "e.preventDefault();\n");
 		strcat(html, "var data = new FormData(e.currentTarget);\n");
@@ -7656,7 +7427,7 @@ void handle_igate(AsyncWebServerRequest *request)
 		strcat(html, "value: 'second',\n");
 		strcat(html, "text: 'Second'\n");
 		strcat(html, "}],\n");
-		strcat(html, "newWindow = window.open(\"/symbol\", null, \"height=400,width=400,status=no,toolbar=no,menubar=no,location=no\");\n");
+		strcat(html, "newWindow = symPick();\n"); // SM0TGY: in-page picker (shell)
 		strcat(html, "}\n");
 
 		strcat(html, "function setValue(symbol,table) {\n");
@@ -8556,7 +8327,7 @@ void handle_digi(AsyncWebServerRequest *request)
 		strcat(html, "value: 'second',\n");
 		strcat(html, "text: 'Second'\n");
 		strcat(html, "}],\n");
-		strcat(html, "newWindow = window.open(\"/symbol\", null, \"height=400,width=400,status=no,toolbar=no,menubar=no,titlebar=no,location=no\");\n");
+		strcat(html, "newWindow = symPick();\n"); // SM0TGY: in-page picker (shell)
 		strcat(html, "}\n");
 
 		strcat(html, "function setValue(symbol,table) {\n");
@@ -10744,7 +10515,7 @@ void handle_tracker(AsyncWebServerRequest *request)
 	strcat(html, "value: 'second',\n");
 	strcat(html, "text: 'Second'\n");
 	strcat(html, "}],\n");
-	strcat(html, "newWindow = window.open(\"/symbol?sel=\"+sel.toString(), null, \"height=400,width=400,status=no,toolbar=no,menubar=no,location=no\");\n");
+	strcat(html, "newWindow = symPick(sel);\n"); // SM0TGY: in-page picker (shell)
 	strcat(html, "}\n");
 
 	strcat(html, "function setValue(sel,symbol,table) {\n");
@@ -11560,6 +11331,23 @@ void handle_wireless(AsyncWebServerRequest *request)
 // 	free(jsonMsg);
 // }
 
+// SM0TGY: own RF transmissions to the packet view (same JSON as RX, plus "Dir":"TX")
+void handle_ws_tx(const char *raw, size_t len)
+{
+	if (ws.count() < 1 || raw == NULL || len < 5 || len > 400)
+		return;
+	char *out = (char *)calloc(len * 2 + 8, 1);
+	char *msg = (char *)calloc(len * 2 + 120, 1);
+	if (out && msg)
+	{
+		encode_base64((unsigned char *)raw, len, (unsigned char *)out);
+		snprintf(msg, len * 2 + 120, "{\"Active\":\"1\",\"Dir\":\"TX\",\"mVrms\":\"0\",\"RAW\":\"%s\",\"timeStamp\":\"%li\"}", out, (long)time(NULL));
+		ws.textAll(msg);
+	}
+	free(out);
+	free(msg);
+}
+
 // void handle_ws(String Raw,uint16_t mVrms)
 void handle_ws(char *Raw, size_t len, uint16_t mVrms)
 {
@@ -11860,7 +11648,7 @@ void handle_about(AsyncWebServerRequest *request)
 		strcat(webString, "ESP32-WROOM NO OTA,ESP32 DoIt DevKit");
 		sprintf(FirmwareOTA, "ESP32_NOOTA_%s", ver);
 	#else
-		strcat(webString, "ESP32-WROOM,ESP32 DoIt DevKit");
+		strcat(webString, "ESP32-DevKitC-VE (WROVER-E), APRS Interface V1");
 		sprintf(FirmwareOTA, "ESP32_NODISP_%s", ver);	
 	#endif
 #elif defined(CONFIG_IDF_TARGET_ESP32C3)
@@ -12408,6 +12196,7 @@ void webService()
 	// web client handlers
 	async_server.on("/", HTTP_GET, [](AsyncWebServerRequest *request)
 					{ setMainPage(request); });
+	uiForkRoutes(async_server); // SM0TGY: /status.json, /heard.json, /heard, /radar, /pkt, /more
 	async_server.on("/symbol", HTTP_GET, [](AsyncWebServerRequest *request)
 					{ handle_symbol(request); });
 	// async_server.on("/symbol2", HTTP_GET | HTTP_POST, [](AsyncWebServerRequest *request)

@@ -368,6 +368,7 @@ typedef struct
 } pcnt_evt_t;
 
 unsigned long upTimeStamp = 0;
+unsigned long lastTxMillis = 0; // SM0TGY: millis() of the last RF transmission, 0 = none
 void convertSecondsToDHMS(char *dmhs, unsigned long totalSeconds)
 {
     // Calculate days, hours, minutes, and seconds
@@ -2678,6 +2679,31 @@ pkgListType getPkgList(int idx)
     return ret;
 }
 
+// SM0TGY: copy of a list entry including its raw text, taken under the lock, so the
+// web server task never reads a raw buffer that the radio task frees meanwhile.
+bool getPkgListCopy(int idx, pkgListType *out, char *raw, size_t cap)
+{
+    bool ok = false;
+    psramLock();
+    memset(out, 0, sizeof(pkgListType));
+    raw[0] = 0;
+    if (idx < PKGLISTSIZE)
+    {
+        memcpy(out, &pkgList[idx], sizeof(pkgListType));
+        if (pkgList[idx].raw != NULL && cap > 1)
+        {
+            size_t n = pkgList[idx].length < cap - 1 ? pkgList[idx].length : cap - 1;
+            memcpy(raw, pkgList[idx].raw, n);
+            raw[n] = 0;
+            ok = true;
+        }
+    }
+    out->raw = raw;
+    out->length = strlen(raw);
+    psramUnlock();
+    return ok;
+}
+
 int pkgListUpdate(char *call, char *raw, uint16_t type, bool channel, uint16_t audioLvl)
 {
     size_t len;
@@ -3010,6 +3036,19 @@ static void btWrite(const uint8_t *b, size_t n)
 #endif
 }
 
+// SM0TGY: Bluetooth state for the web UI: 0 off/not started, 1 waiting for app, 2 app connected
+extern int diagBtStatus;
+int btClientState()
+{
+    if (!config.bt_master || diagBtStatus != 1)
+        return 0;
+#if BT_USE_BLE
+    return NuSerial.isConnected() ? 2 : 1;
+#else
+    return SerialBT.hasClient() ? 2 : 1;
+#endif
+}
+
 static void btSendOwnTx(const char *tnc2, size_t len)
 {
     if (!config.bt_master || !isOwnSrc(tnc2))
@@ -3038,7 +3077,10 @@ static void btSendOwnTx(const char *tnc2, size_t len)
         btWrite(pkg, kiss_wrapper(pkg, raw, n));
     }
 }
+#else
+int btClientState() { return 0; }
 #endif
+extern void handle_ws_tx(const char *raw, size_t len);
 
 bool pkgTxSend()
 {
@@ -3107,6 +3149,8 @@ bool pkgTxSend()
 #ifdef BLUETOOTH
                     btSendOwnTx(txQueue[i].Info, txQueue[i].length);
 #endif
+                    lastTxMillis = millis(); // SM0TGY: web UI "last TX"
+                    handle_ws_tx(txQueue[i].Info, txQueue[i].length);
                 
                     // free(info);
                     //  for (int i = 0; i < 100; i++)
