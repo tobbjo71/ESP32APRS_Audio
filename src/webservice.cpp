@@ -848,10 +848,12 @@ void handle_sidebar(AsyncWebServerRequest *request)
 		strcat(html, "<th style=\"background:#606060; color:#b0b0b0;border-radius: 10px;border: 2px solid white;\">DIGI</th>\n");
 	strcat(html, "</tr>\n");
 	strcat(html, "<tr>\n");
+#ifndef FORK_SLIM
 	if (config.wx_en)
 		strcat(html, "<th style=\"background:#0b0; color:#030; width:50%;border-radius: 10px;border: 2px solid white;\">WX</th>\n");
 	else
 		strcat(html, "<th style=\"background:#606060; color:#b0b0b0;border-radius: 10px;border: 2px solid white;\">WX</th>\n");
+#endif // FORK_SLIM
 	if (config.trk_en)
 		strcat(html, "<th style=\"background:#0b0; color:#030; width:50%;border-radius: 10px;border: 2px solid white;\">TRACKER</th>\n");
 	else
@@ -1104,7 +1106,9 @@ void handle_sysinfo(AsyncWebServerRequest *request)
 	if (VBat_Flag)
 		strcat(html, "<th><span>VBat(V)</span></th>\n");
 	strcat(html, "<th><span>CPU(Mhz)</span></th>\n");
+#ifndef FORK_SLIM
 	strcat(html, "<th><span>CPU.Temp(°C)</span></th>\n");
+#endif // FORK_SLIM
 
 	strcat(html, "</tr>\n");
 	strcat(html, "<tr>\n");
@@ -1140,6 +1144,7 @@ void handle_sysinfo(AsyncWebServerRequest *request)
 	snprintf(temp_buffer, sizeof(temp_buffer), "<td><b>%d</b></td>\n", ESP.getCpuFreqMHz());
 	strcat(html, temp_buffer);
 
+#ifndef FORK_SLIM
 	ESPCPUTemp tempSensor;
 	if (tempSensor.begin())
 	{
@@ -1150,6 +1155,7 @@ void handle_sysinfo(AsyncWebServerRequest *request)
 	{
 		strcat(html, "<td><b>N/A</b></td>\n");
 	}
+#endif // FORK_SLIM
 	// html += "<td style=\"background: #f00\"><b>" + String(ESP.getCycleCount()) + "</b></td>\n";
 	strcat(html, "</tr>\n");
 	strcat(html, "</table>\n");
@@ -7754,6 +7760,7 @@ void handle_igate(AsyncWebServerRequest *request)
 		strcat(html, "</table></td>");
 		strcat(html, "</tr>\n");
 
+#ifndef FORK_SLIM
 		strcat(html, "<tr>\n");
 		strcat(html, "<td align=\"right\"><b>Telemetry:</b><br />(v=0->8280)</td>\n");
 		strcat(html, "<td align=\"center\"><table>\n");
@@ -7821,6 +7828,7 @@ void handle_igate(AsyncWebServerRequest *request)
 			strcat(html, "</tr>\n");
 		}
 		strcat(html, "</table></td></tr>\n");
+#endif // FORK_SLIM
 
 		strcat(html, "<tr><td colspan=\"2\" align=\"right\">\n");
 		strcat(html, "<div><button class=\"button\" type='submit' id='submitIGATE'  name=\"commitIGATE\"> Apply Change </button></div>\n");
@@ -8678,6 +8686,7 @@ void handle_digi(AsyncWebServerRequest *request)
 		strcat(html, "</tr></table></fieldset>\n");
 		strcat(html, "</td></tr>\n");
 
+#ifndef FORK_SLIM
 		strcat(html, "<tr>\n");
 		strcat(html, "<td align=\"right\"><b>Telemetry:</b><br />(v=0->8280)</td>\n");
 		strcat(html, "<td align=\"center\"><table>\n");
@@ -8743,6 +8752,7 @@ void handle_digi(AsyncWebServerRequest *request)
 			strcat(html, "</tr>\n");
 		}
 		strcat(html, "</table></td></tr>\n");
+#endif // FORK_SLIM
 		strcat(html, "<tr><td colspan=\"2\" align=\"right\">\n");
 		strcat(html, "<div><button class=\"button\" type='submit' id='submitDIGI'  name=\"commitDIGI\"> Apply Change </button></div>\n");
 		strcat(html, "<input type=\"hidden\" name=\"commitDIGI\"/>\n");
@@ -10858,6 +10868,7 @@ void handle_tracker(AsyncWebServerRequest *request)
 
 	strcat(html, "</table></fieldset></tr>");
 
+#ifndef FORK_SLIM
 	strcat(html, "<tr>\n");
 	strcat(html, "<td align=\"right\"><b>Telemetry:</b><br />(v=0->8280)</td>\n");
 	strcat(html, "<td align=\"center\"><table>\n");
@@ -10916,6 +10927,7 @@ void handle_tracker(AsyncWebServerRequest *request)
 		strcat(html, "</tr>\n");
 	}
 	strcat(html, "</table></td></tr>\n");
+#endif // FORK_SLIM
 	strcat(html, "<tr><td colspan=\"2\" align=\"right\">\n");
 	strcat(html, "<div><button class=\"button\" type='submit' id='submitTRACKER'  name=\"commitTRACKER\"> Apply Change </button></div>\n");
 	strcat(html, "<input type=\"hidden\" name=\"commitTRACKER\"/>\n");
@@ -11780,11 +11792,11 @@ void handle_about(AsyncWebServerRequest *request)
 
 	strcat(webString, "<table>");
 	strcat(webString, "<th colspan=\"2\"><span><b>Firmware</b></span></th>\n");
-	strcat(webString, "<tr><td align=\"right\"><b>Version: </b></td><td align=\"left\">SM0TGY APRS Tracker v" FORK_VERSION "</td></tr>\n");
-	strcat(webString, "<tr><td align=\"right\"><b>Source: </b></td><td align=\"left\">github.com/tobbjo71/ESP32APRS_Audio (branch newn-digi)</td></tr>\n");
-	strcat(webString, "<tr><td align=\"right\"><b>Based on: </b></td><td align=\"left\">ESP32APRS_Audio by Somkiat Nakhonthai HS5TQA, github.com/nakhonthai/ESP32APRS_Audio</td></tr>\n");
-	strcat(webString, "<tr><td align=\"right\"><b>License: </b></td><td align=\"left\">GNU GPL v3. No warranty.</td></tr>\n");
-	strcat(webString, "<tr><td align=\"right\"><b>APRS symbols: </b></td><td align=\"left\">aprs.fi symbol set, github.com/hessu/aprs-symbols</td></tr>\n");
+	strcat(webString, "<tr><td align=\"right\"><b>Version: </b></td><td align=\"left\" style=\"word-break:break-word\">SM0TGY APRS Tracker<br />v" FORK_VERSION "</td></tr>\n");
+	strcat(webString, "<tr><td align=\"right\"><b>Source: </b></td><td align=\"left\" style=\"word-break:break-word\">github.com/tobbjo71/<br />ESP32APRS_Audio<br />branch newn-digi</td></tr>\n");
+	strcat(webString, "<tr><td align=\"right\"><b>Based on: </b></td><td align=\"left\" style=\"word-break:break-word\">ESP32APRS_Audio<br />Somkiat Nakhonthai HS5TQA<br />github.com/nakhonthai/<br />ESP32APRS_Audio</td></tr>\n");
+	strcat(webString, "<tr><td align=\"right\"><b>License: </b></td><td align=\"left\" style=\"word-break:break-word\">GNU GPL v3<br />No warranty</td></tr>\n");
+	strcat(webString, "<tr><td align=\"right\"><b>APRS symbols: </b></td><td align=\"left\" style=\"word-break:break-word\">aprs.fi symbol set<br />github.com/hessu/<br />aprs-symbols</td></tr>\n");
 
 	strcat(webString, "</table>");
 	strcat(webString, "</td></tr></table><br />");

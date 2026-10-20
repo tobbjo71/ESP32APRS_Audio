@@ -6996,6 +6996,7 @@ void taskAPRS(void *pvParameters)
                 String cmn = "";
                 Sleep_Activate &= ~ACTIVATE_TRACKER;
                 StandByTick = millis() + (5000);
+#ifndef FORK_SLIM
                 if (config.trk_tlm_interval > 0)
                 {
                     trkTlmInvCount++;
@@ -7140,6 +7141,7 @@ void taskAPRS(void *pvParameters)
                         }
                     }
                 }
+#endif // FORK_SLIM (telemetry removed)
 
                 if (config.trk_loc2rf)
                 {
@@ -7466,6 +7468,7 @@ void taskAPRS(void *pvParameters)
                         iGatetickInterval = millis() + (config.igate_interval * 1000);
                         Sleep_Activate &= ~ACTIVATE_IGATE;
                         StandByTick = millis() + (5000);
+#ifndef FORK_SLIM
                         if (config.igate_tlm_interval > 0)
                         {
                             igateTlmInvCount++;
@@ -7610,6 +7613,7 @@ void taskAPRS(void *pvParameters)
                                 }
                             }
                         }
+#endif // FORK_SLIM (telemetry removed)
                         if (strlen(config.igate_comment) > 0)
                         {
                             rawData += String(config.igate_comment);
@@ -7731,6 +7735,7 @@ void taskAPRS(void *pvParameters)
                         DiGiInterval = millis() + (config.digi_interval * 1000);
                         Sleep_Activate &= ~ACTIVATE_DIGI;
                         StandByTick = millis() + (5000);
+#ifndef FORK_SLIM
                         if (config.digi_tlm_interval > 0)
                         {
                             digiTlmInvCount++;
@@ -7876,6 +7881,7 @@ void taskAPRS(void *pvParameters)
                                 }
                             }
                         }
+#endif // FORK_SLIM (telemetry removed)
                         if (strlen(config.digi_comment) > 0)
                         {
                             rawData += String(config.digi_comment);
@@ -8103,6 +8109,7 @@ void taskAPRS(void *pvParameters)
 #endif
         }
 
+#ifndef FORK_SLIM
         if (config.tlm0_en)
         {
             if (systemTLM.ParmTimeout < millis())
@@ -8198,6 +8205,7 @@ void taskAPRS(void *pvParameters)
                 sendTelemetry_0(rawTlm, false);
             }
         }
+#endif // FORK_SLIM (telemetry removed)
     }
 }
 
