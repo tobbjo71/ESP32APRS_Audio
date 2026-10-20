@@ -53,7 +53,7 @@ function st(){fetch('/status.json').then(function(r){return r.json()}).then(func
 document.getElementById('hCall').textContent=s.call;document.getElementById('hSub').textContent=s.host+' \u00b7 v'+s.ver;document.getElementById('hTime').textContent=s.time;
 var c=s.gps.fix?chip('GPS '+s.gps.sat+' sat'):chip('GPS no fix','w');
 c+=s.bt==2?chip('BT app connected'):(s.bt==1?chip('BT waiting','off'):'');
-c+=s.ltx<0?chip('No TX yet','off'):chip('TX '+ago(s.ltx)+' ago','tx');
+c+=s.ltx<0?chip('No TX yet','off'):chip('TX '+ago(s.ltx)+' ago');
 document.getElementById('chips').innerHTML=c;if(window.onStatus){try{window.onStatus(s)}catch(e){}}
 }).catch(function(){document.getElementById('chips').innerHTML=chip('No contact','w')})}
 var SYMH={1:[34,68,74,123,124,125,126],2:[34,37,49,50,51,52,53,54,55,56,61,77,89,90,92,93,108,113,120,124,125,126]};
