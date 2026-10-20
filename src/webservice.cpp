@@ -42,15 +42,11 @@ char *allocateStringMemory(size_t size)
 	// If PSRAM allocation fails, fall back to regular heap
 #endif
 #ifndef BOARD_HAS_PSRAM
-	// Page buffers are sized for PSRAM builds, where the size above is doubled.
-	// Without PSRAM, give large buffers the same headroom when the heap allows,
-	// otherwise pages that outgrow the nominal size overflow (e.g. MOD page).
+	// SM0TGY v1.13: nominal size plus 1 kB margin (was 2x, which caused the
+	// lowest-heap dips measured on /diag). Pages measured on the board are well
+	// below their nominal buffers; /diag shows the highest fill ratio seen.
 	if (size >= 4096)
-	{
-		ptr = (char *)calloc(size * 2, sizeof(char));
-		if (ptr != NULL)
-			return ptr;
-	}
+		size += 1024;
 #endif
 	// Regular heap allocation (calloc zero-fills)
 	ptr = (char *)calloc(size, sizeof(char));
@@ -64,6 +60,8 @@ char *allocateStringMemory(size_t size)
 // request is finished (onDisconnect). The caller must not free it.
 size_t diagMaxPage = 0;        // largest page sent since boot (bytes)
 char diagMaxPageUrl[32] = "";
+unsigned diagMaxFill = 0;       // highest page/buffer fill in percent
+char diagMaxFillUrl[32] = "";
 
 AsyncWebServerResponse *beginBufferResponse(AsyncWebServerRequest *request, char *buf)
 {
@@ -72,6 +70,16 @@ AsyncWebServerResponse *beginBufferResponse(AsyncWebServerRequest *request, char
 	{
 		diagMaxPage = len;
 		strlcpy(diagMaxPageUrl, request->url().c_str(), sizeof(diagMaxPageUrl));
+	}
+	size_t capb = heap_caps_get_allocated_size(buf);
+	if (capb > 0)
+	{
+		unsigned fill = (unsigned)((len + 1) * 100 / capb);
+		if (fill > diagMaxFill)
+		{
+			diagMaxFill = fill;
+			strlcpy(diagMaxFillUrl, request->url().c_str(), sizeof(diagMaxFillUrl));
+		}
 	}
 	char *shrunk = (char *)realloc(buf, len + 1);
 	if (shrunk != NULL)
@@ -1098,6 +1106,8 @@ void handle_symbol(AsyncWebServerRequest *request)
 // ---- SM0TGY: memory and stability diagnostics (/diag) ----
 extern size_t diagMaxPage;
 extern char diagMaxPageUrl[32];
+extern unsigned diagMaxFill;
+extern char diagMaxFillUrl[32];
 extern int diagResetReason;
 extern uint32_t diagCrashCount;
 extern int diagBtStatus;
@@ -1169,6 +1179,8 @@ void handle_diag(AsyncWebServerRequest *request)
 		strlcat(html, row, cap);
 	}
 	snprintf(row, sizeof(row), "<tr><td>Largest web page since boot</td><td>%u bytes (%s)</td></tr>\n", (unsigned)diagMaxPage, diagMaxPageUrl);
+	strlcat(html, row, cap);
+	snprintf(row, sizeof(row), "<tr><td>Fullest page buffer</td><td>%u %% (%s)%s</td></tr>\n", diagMaxFill, diagMaxFillUrl, diagMaxFill >= 90 ? " <b>NEAR LIMIT</b>" : "");
 	strlcat(html, row, cap);
 	snprintf(row, sizeof(row), "<tr><td>Wi-Fi</td><td>AP clients %d, STA %s</td></tr>\n", WiFi.softAPgetStationNum(), WiFi.isConnected() ? "connected" : "not connected");
 	strlcat(html, row, cap);
