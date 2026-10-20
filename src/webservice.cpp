@@ -11336,9 +11336,99 @@ void handle_wireless(AsyncWebServerRequest *request)
 // 	free(jsonMsg);
 // }
 
+// SM0TGY: packet log for the Packets page: last 60 minutes, RX and own TX, kept in PSRAM
+// so the page shows history even when it was not open.
+#define PKTLOG_N 200
+#define PKTLOG_RAW 224
+typedef struct
+{
+	time_t t;
+	uint32_t ms;
+	char dir;
+	int16_t mv;
+	char raw[PKTLOG_RAW];
+} pktLogEntry;
+static pktLogEntry *pktLog = NULL;
+static int pktLogHead = 0, pktLogCount = 0;
+static SemaphoreHandle_t pktLogMux = NULL;
+
+void pktLogAdd(char dir, const char *raw, size_t len, int mv)
+{
+	if (raw == NULL || len < 5)
+		return;
+	if (pktLogMux == NULL)
+		pktLogMux = xSemaphoreCreateMutex();
+	if (pktLogMux == NULL)
+		return;
+	xSemaphoreTake(pktLogMux, portMAX_DELAY);
+	if (pktLog == NULL)
+		pktLog = (pktLogEntry *)calloc(PKTLOG_N, sizeof(pktLogEntry)); // > 4 kB: PSRAM
+	if (pktLog)
+	{
+		pktLogEntry *e = &pktLog[pktLogHead];
+		e->t = time(NULL);
+		e->ms = millis();
+		e->dir = dir;
+		e->mv = mv;
+		size_t n = len < PKTLOG_RAW - 1 ? len : PKTLOG_RAW - 1;
+		memcpy(e->raw, raw, n);
+		e->raw[n] = 0;
+		pktLogHead = (pktLogHead + 1) % PKTLOG_N;
+		if (pktLogCount < PKTLOG_N)
+			pktLogCount++;
+	}
+	xSemaphoreGive(pktLogMux);
+}
+
+// JSON array, newest first, entries younger than 60 minutes. Caller frees.
+char *pktLogJson()
+{
+	size_t cap = 64 + (size_t)pktLogCount * (PKTLOG_RAW * 2 + 80);
+	char *js = (char *)malloc(cap);
+	if (!js)
+		return NULL;
+	size_t o = 0;
+	js[o++] = '[';
+	if (pktLogMux)
+	{
+		xSemaphoreTake(pktLogMux, portMAX_DELAY);
+		uint32_t now = millis();
+		for (int k = 0; k < pktLogCount; k++)
+		{
+			int i = (pktLogHead - 1 - k + PKTLOG_N) % PKTLOG_N;
+			pktLogEntry *e = &pktLog[i];
+			if (now - e->ms > 3600000UL)
+				break;
+			if (o + PKTLOG_RAW * 2 + 80 >= cap)
+				break;
+			o += snprintf(js + o, cap - o, "%s{\"d\":\"%s\",\"ts\":%ld,\"mv\":%d,\"r\":\"", o > 1 ? "," : "", e->dir == 'T' ? "TX" : "RX", (long)e->t, e->mv);
+			for (const char *c = e->raw; *c && o + 8 < cap; c++)
+			{
+				unsigned char ch = (unsigned char)*c;
+				if (ch == '"' || ch == '\\')
+				{
+					js[o++] = '\\';
+					js[o++] = ch;
+				}
+				else if (ch < 32 || ch > 126)
+					o += snprintf(js + o, cap - o, "\\u%04x", ch);
+				else
+					js[o++] = ch;
+			}
+			js[o++] = '"';
+			js[o++] = '}';
+		}
+		xSemaphoreGive(pktLogMux);
+	}
+	js[o++] = ']';
+	js[o] = 0;
+	return js;
+}
+
 // SM0TGY: own RF transmissions to the packet view (same JSON as RX, plus "Dir":"TX")
 void handle_ws_tx(const char *raw, size_t len)
 {
+	pktLogAdd('T', raw, len, 0);
 	if (ws.count() < 1 || raw == NULL || len < 5 || len > 400)
 		return;
 	char *out = (char *)calloc(len * 2 + 8, 1);
@@ -11356,6 +11446,8 @@ void handle_ws_tx(const char *raw, size_t len)
 // void handle_ws(String Raw,uint16_t mVrms)
 void handle_ws(char *Raw, size_t len, uint16_t mVrms)
 {
+	if (len > 5)
+		pktLogAdd('R', Raw, len, mVrms); // SM0TGY: history for the Packets page
 	if (ws.count() < 1)
 		return;
 

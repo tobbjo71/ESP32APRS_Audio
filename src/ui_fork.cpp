@@ -12,6 +12,7 @@ extern unsigned long upTimeStamp;
 extern unsigned long lastTxMillis;
 extern int btClientState();
 extern char *heardCacheDup();
+extern char *pktLogJson();
 extern AsyncWebServerResponse *beginBufferResponse(AsyncWebServerRequest *request, char *buf);
 
 #define ICON(d) "<svg width=\"24\" height=\"24\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"2\" stroke-linecap=\"round\" stroke-linejoin=\"round\" aria-hidden=\"true\">" d "</svg>"
@@ -120,18 +121,22 @@ static const char UI_PKT[] PROGMEM = R"HTML(<h2 class="pg">Packets <span id="pc"
 <div class="tile" style="margin-bottom:10px"><small>Audio level, last received packet</small><b class="mono" id="pdb">&ndash;</b>
 <div class="lvl"><div style="height:12px"><b id="pbar" style="height:12px;width:0"></b></div></div><span>&minus;40 &hellip; 0 dBV &middot; good &minus;20 &hellip; &minus;10</span></div>
 <div class="seg" id="pf"><button type="button" class="on" data-f="">All</button><button type="button" data-f="RX">Received</button><button type="button" data-f="TX">Sent</button></div>
-<div id="pl"><p class="muted">Waiting for packets&hellip; (shows packets from when this page was opened)</p></div>
-<script>(function(){var L=[],F='';
+<div id="pl"><p class="muted">Loading&hellip;</p></div>
+<script>(function(){var L=[],F='',stopped=false;
+function lv(db){var b=document.getElementById('pbar');b.style.width=Math.max(0,Math.min(100,(db+40)/40*100))+'%';b.style.background=db>-10?'var(--red)':(db>=-20?'var(--o5)':'var(--och)');document.getElementById('pdb').textContent=db.toFixed(1)+' dBV'}
 function esc(s){return String(s).replace(/[&<>"]/g,function(c){return{'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]})}
 function draw(){var h='';L.forEach(function(p){if(F&&p.d!=F)return;h+='<div class="pk"><div class="h"><span class="tag '+(p.d=='TX'?'tx':'')+'">'+p.d+'</span>'+p.t+(p.db!==null?' &middot; '+p.db.toFixed(0)+' dBV':'')+'</div><div class="raw">'+esc(p.r)+'</div></div>'});
-document.getElementById('pl').innerHTML=h||'<p class="muted">Waiting for packets&hellip;</p>';document.getElementById('pc').textContent=L.length?L.length+' since opened':''}
+document.getElementById('pl').innerHTML=h||'<p class="muted">No packets in the last 60 minutes.</p>';document.getElementById('pc').textContent=L.length?L.length+' in the last 60 min':''}
 document.querySelectorAll('#pf button').forEach(function(b){b.onclick=function(){F=b.dataset.f;document.querySelectorAll('#pf button').forEach(function(x){x.classList.toggle('on',x==b)});draw()}});
-var ws=new WebSocket('ws://'+location.hostname+':81/ws');
+function hm(ts){var t=new Date(Number(ts)*1000);return t.getFullYear()<2020?'--:--':('0'+t.getHours()).slice(-2)+':'+('0'+t.getMinutes()).slice(-2)+':'+('0'+t.getSeconds()).slice(-2)}
+function dbv(mv){var d=20*Math.log10(parseFloat(mv)/1000);return isFinite(d)?d:null}
+var ws=null;fetch('/pkt.json').then(function(r){return r.json()}).then(function(a){a.forEach(function(e){L.push({d:e.d,t:hm(e.ts),db:e.d=='RX'?dbv(e.mv):null,r:e.r})});for(var i=0;i<L.length;i++)if(L[i].db!==null){lv(L[i].db);break}draw();live()}).catch(function(){draw();live()});
+function live(){if(stopped)return;ws=new WebSocket('ws://'+location.hostname+':81/ws');
 ws.onmessage=function(e){var j;try{j=JSON.parse(e.data)}catch(x){return}if(parseInt(j.Active)!=1)return;var d=j.Dir=='TX'?'TX':'RX',db=null;
-if(d=='RX'){db=20*Math.log10(parseFloat(j.mVrms)/1000);if(!isFinite(db))db=null;else{var b=document.getElementById('pbar');b.style.width=Math.max(0,Math.min(100,(db+40)/40*100))+'%';b.style.background=db>-10?'var(--red)':(db>=-20?'var(--o5)':'var(--och)');document.getElementById('pdb').textContent=db.toFixed(1)+' dBV'}}
+if(d=='RX'){db=20*Math.log10(parseFloat(j.mVrms)/1000);if(!isFinite(db))db=null;else lv(db)}
 var raw='';try{raw=atob(j.RAW)}catch(x){}var t=new Date(Number(j.timeStamp)*1000),ts=t.getFullYear()<2020?'--:--':('0'+t.getHours()).slice(-2)+':'+('0'+t.getMinutes()).slice(-2)+':'+('0'+t.getSeconds()).slice(-2);
-L.unshift({d:d,t:ts,db:db,r:raw});if(L.length>60)L.pop();draw()};
-window.pageStop=function(){try{ws.close()}catch(e){}};
+L.unshift({d:d,t:ts,db:db,r:raw});if(L.length>200)L.pop();draw()}}
+window.pageStop=function(){stopped=true;try{if(ws)ws.close()}catch(e){}};
 })();</script>
 )HTML";
 
@@ -276,6 +281,20 @@ void uiForkRoutes(AsyncWebServer &srv)
 {
 	srv.on("/status.json", HTTP_GET, handle_status_json);
 	srv.on("/heard.json", HTTP_GET, handle_heard_json);
+	srv.on("/pkt.json", HTTP_GET, [](AsyncWebServerRequest *r) {
+		if (!uiAuth(r))
+			return;
+		char *js = pktLogJson();
+		if (!js)
+		{
+			r->send(500, "text/plain", "Out of memory");
+			return;
+		}
+		AsyncWebServerResponse *resp = beginBufferResponse(r, js);
+		resp->setContentType("application/json");
+		resp->addHeader("Cache-Control", "no-cache");
+		r->send(resp);
+	});
 	srv.on("/heard", HTTP_GET, [](AsyncWebServerRequest *r) { if (uiAuth(r)) uiSendP(r, UI_HEARD); });
 	srv.on("/radar", HTTP_GET, [](AsyncWebServerRequest *r) { if (uiAuth(r)) uiSendP(r, UI_RADAR); });
 	srv.on("/pkt", HTTP_GET, [](AsyncWebServerRequest *r) { if (uiAuth(r)) uiSendP(r, UI_PKT); });

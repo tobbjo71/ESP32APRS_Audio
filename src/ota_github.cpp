@@ -5,8 +5,8 @@
  (branch fw-ota of github.com/tobbjo71/ESP32APRS_Audio, plain HTTP/1.1 GET:
  HTTPClient would pull strptime/mktime into IRAM, which is full) and, when the user confirms,
  downloads the matching _ota.bin into the other OTA slot, checks its MD5 and restarts.
- Server certificates are checked against an embedded Mozilla root bundle
- (data/cert/x509_crt_bundle). Only builds of this fork are offered; upstream
+ Server certificates are checked by mbedTLS against embedded Mozilla root CAs
+ (include/ota_roots.h). Only builds of this fork are offered; upstream
  firmware is never installed. The work runs in its own task; the web page polls
  /ota/status.
 */
@@ -26,8 +26,8 @@
 #define FORK_OTA_HOST "raw.githubusercontent.com"
 #define FORK_OTA_PATH "/tobbjo71/ESP32APRS_Audio/fw-ota/"
 
-extern const uint8_t x509_crt_bundle_start[] asm("_binary_data_cert_x509_crt_bundle_start");
-extern const uint8_t x509_crt_bundle_end[] asm("_binary_data_cert_x509_crt_bundle_end");
+#include "ota_roots.h"
+#include "esp_heap_caps.h"
 
 enum OtaState { OTA_IDLE, OTA_CHECKING, OTA_AVAILABLE, OTA_UPTODATE, OTA_DOWNLOADING, OTA_DONE, OTA_ERROR };
 static volatile OtaState otaState = OTA_IDLE;
@@ -36,7 +36,7 @@ static char otaLatest[16] = "";
 static char otaFile[64] = "";
 static char otaMd5[40] = "";
 static uint32_t otaSize = 0;
-static char otaErr[160] = "";
+static char otaErr[300] = "";
 static TaskHandle_t otaTask = NULL;
 
 static int verNum(const char *v)
@@ -74,6 +74,29 @@ static bool jsonGet(const String &js, const char *key, char *out, size_t cap)
 }
 
 
+// Diagnostics only: after a failed check, connect once more without verification just to
+// read which certificate chain the server presents; nothing is downloaded on this connection.
+static void otaChainInfo(IPAddress ip)
+{
+	NetworkClientSecure *c = new NetworkClientSecure();
+	c->setInsecure();
+	if (c->connect(ip, 443, FORK_OTA_HOST, NULL, NULL, NULL))
+	{
+		const mbedtls_x509_crt *crt = c->getPeerCertificate();
+		size_t o = strlen(otaErr);
+		o += snprintf(otaErr + o, sizeof(otaErr) - o, ". Chain:");
+		for (int n = 0; crt && n < 4 && o + 10 < sizeof(otaErr); n++, crt = crt->next)
+		{
+			char dn[96];
+			mbedtls_x509_dn_gets(dn, sizeof(dn), &crt->issuer);
+			const char *cn = strstr(dn, "CN=");
+			o += snprintf(otaErr + o, sizeof(otaErr) - o, " <%s", cn ? cn + 3 : dn);
+		}
+		c->stop();
+	}
+	delete c;
+}
+
 // Minimal HTTPS GET: returns status code (or <0), fills content length. Headers are consumed.
 static int httpsGet(NetworkClientSecure *cli, const char *path, long *clen)
 {
@@ -89,11 +112,17 @@ static int httpsGet(NetworkClientSecure *cli, const char *path, long *clen)
 		strlcpy(otaErr, "Clock not set (needs GPS fix or NTP) - certificates cannot be checked", sizeof(otaErr));
 		return -11;
 	}
-	if (!cli->connect(ip, 443, FORK_OTA_HOST, NULL, NULL, NULL))
+	// The root list is parsed during connect (about 170 certificates); let those
+	// allocations go to PSRAM instead of the small internal heap.
+	heap_caps_malloc_extmem_enable(64);
+	int ok = cli->connect(ip, 443, FORK_OTA_HOST, OTA_ROOTS_PEM, NULL, NULL);
+	heap_caps_malloc_extmem_enable(4096);
+	if (!ok)
 	{
 		char e[64] = "";
 		int code = cli->lastError(e, sizeof(e));
 		snprintf(otaErr, sizeof(otaErr), "TLS to %s failed: %s (%d), free RAM %u", ip.toString().c_str(), e, code, (unsigned)ESP.getFreeHeap());
+		otaChainInfo(ip);
 		return -12;
 	}
 	cli->printf("GET %s HTTP/1.1\r\nHost: " FORK_OTA_HOST "\r\nUser-Agent: SM0TGY-APRSTracker/" FORK_VERSION "\r\nConnection: close\r\n\r\n", path);
@@ -117,7 +146,7 @@ static int httpsGet(NetworkClientSecure *cli, const char *path, long *clen)
 static void otaCheckTask(void *)
 {
 	NetworkClientSecure *cli = new NetworkClientSecure();
-	cli->setCACertBundle(x509_crt_bundle_start, x509_crt_bundle_end - x509_crt_bundle_start);
+	cli->setCACert(OTA_ROOTS_PEM);
 	long clen;
 	int code = httpsGet(cli, FORK_OTA_PATH "manifest_" FORK_OTA_VARIANT ".json", &clen);
 	if (code != 200)
@@ -153,7 +182,7 @@ static void otaCheckTask(void *)
 static void otaInstallTask(void *)
 {
 	NetworkClientSecure *cli = new NetworkClientSecure();
-	cli->setCACertBundle(x509_crt_bundle_start, x509_crt_bundle_end - x509_crt_bundle_start);
+	cli->setCACert(OTA_ROOTS_PEM);
 	char path[128];
 	snprintf(path, sizeof(path), FORK_OTA_PATH "%s", otaFile);
 	bool ok = false;
@@ -236,7 +265,7 @@ static bool otaAuth(AsyncWebServerRequest *r)
 static void otaStatus(AsyncWebServerRequest *r)
 {
 	static const char *names[] = {"idle", "checking", "available", "uptodate", "downloading", "done", "error"};
-	char js[420];
+	char js[560];
 	snprintf(js, sizeof(js), "{\"state\":\"%s\",\"cur\":\"%s\",\"latest\":\"%s\",\"size\":%lu,\"pct\":%d,\"err\":\"%s\",\"net\":%d}",
 			 names[otaState], FORK_VERSION, otaLatest, (unsigned long)otaSize, otaPct, otaErr, WiFi.isConnected() ? 1 : 0);
 	AsyncWebServerResponse *resp = r->beginResponse(200, "application/json", js);
