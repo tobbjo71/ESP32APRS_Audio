@@ -338,6 +338,7 @@ time_t startTime = 0;
 #define CONFIG_BT_NIMBLE_MEM_ALLOC_MODE_EXTERNAL 1
 #include <NuSerial.hpp>
 #include <NimBLEDevice.h>
+#include <stdexcept>
 #else
 #include "BluetoothSerial.h"
 BluetoothSerial SerialBT;
@@ -3592,14 +3593,48 @@ void postTransmission()
     digitalWrite(config.modbus_de_gpio, 0);
 }
 
+// ---- SM0TGY diagnostics (shown on /diag) ----
+RTC_NOINIT_ATTR uint32_t diagCrashMagic;
+RTC_NOINIT_ATTR uint32_t diagCrashCount; // consecutive boots after a crash/watchdog reset
+int diagResetReason = 0;
+int diagBtStatus = 0; // 0 off in config, 1 started, 2 start failed, 3 skipped after repeated crashes
+char diagBtError[64] = "";
+uint32_t diagHeapBeforeBt = 0, diagHeapAfterBt = 0;
+
+void diagBootCheck()
+{
+    esp_reset_reason_t r = esp_reset_reason();
+    diagResetReason = (int)r;
+    if (diagCrashMagic != 0x5A5A1234)
+    {
+        diagCrashMagic = 0x5A5A1234;
+        diagCrashCount = 0;
+    }
+    if (r == ESP_RST_PANIC || r == ESP_RST_INT_WDT || r == ESP_RST_TASK_WDT || r == ESP_RST_WDT || r == ESP_RST_BROWNOUT)
+        diagCrashCount++;
+    else
+        diagCrashCount = 0;
+}
+
 #ifdef BLUETOOTH
 void bluetooth_init()
 {
     if (config.bt_master == true)
     {
+        // After two crash/watchdog resets in a row Bluetooth is skipped for this boot,
+        // so Wi-Fi and the web interface come up and the cause can be read on /diag.
+        if (diagCrashCount >= 2)
+        {
+            diagBtStatus = 3;
+            return;
+        }
+        diagHeapBeforeBt = ESP.getFreeHeap();
 #if BT_USE_BLE
+      try
+      {
         // Initialize BLE stack and Nordic UART service
-        NimBLEDevice::init(config.bt_name);
+        if (!NimBLEDevice::init(config.bt_name))
+            throw std::runtime_error("NimBLEDevice::init failed");
         // Advertising packet is max 31 bytes: flags (3) + 128-bit service UUID (18) leaves
         // too little for the name. Put the name in the scan response so the service UUID
         // stays in the advertisement (apps such as APRS Mobile look for the UUID).
@@ -3614,6 +3649,13 @@ void bluetooth_init()
             log_d("Bluetooth Security: Passkey %d", config.bt_pin);
         }
         NuSerial.begin_uuid(config.bt_uuid, config.bt_uuid_tx, config.bt_uuid_rx, 115200);
+        diagBtStatus = 1;
+      }
+      catch (const std::exception &e)
+      {
+        diagBtStatus = 2;
+        strlcpy(diagBtError, e.what(), sizeof(diagBtError));
+      }
 #else
         // Classic ESP32: Bluetooth SPP server (slave), e.g. for APRSdroid or a display unit
         if (config.bt_pin > 0)
@@ -3623,10 +3665,17 @@ void bluetooth_init()
             SerialBT.setPin(pin, strlen(pin));
         }
         if (SerialBT.begin(String(config.bt_name)))
+        {
+            diagBtStatus = 1;
             log_d("Bluetooth SPP started as %s", config.bt_name);
+        }
         else
-            log_d("Bluetooth SPP start failed");
+        {
+            diagBtStatus = 2;
+            strlcpy(diagBtError, "SerialBT.begin failed", sizeof(diagBtError));
+        }
 #endif
+        diagHeapAfterBt = ESP.getFreeHeap();
     }
 }
 #endif
@@ -3637,6 +3686,7 @@ void bluetooth_init()
 bool AFSKInitAct = false;
 void setup()
 {
+    diagBootCheck();
     // byte *ptr;
     //  setCpuFrequencyMhz(160);
 #ifdef BOARD_HAS_PSRAM
@@ -5377,6 +5427,8 @@ void loop()
     if (millis() > timeTask)
     {
         timeTask = millis() + 10000;
+        if (millis() > 120000)
+            diagCrashCount = 0; // stable for 2 minutes
         unsigned long upT = (millis() / 1000) - upTimeStamp;
         convertSecondsToDHMS(nmea, upT);
         log_d("Task process APRS=%iuS\t NETWORK=%iuS\t GPS=%iuS\t SERIAL=%iuS\n", timerAPRS, timerNetwork, timerGPS, timerSerial);

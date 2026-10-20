@@ -1086,6 +1086,92 @@ void handle_symbol(AsyncWebServerRequest *request)
 	}
 }
 
+// ---- SM0TGY: memory and stability diagnostics (/diag) ----
+extern int diagResetReason;
+extern uint32_t diagCrashCount;
+extern int diagBtStatus;
+extern char diagBtError[64];
+extern uint32_t diagHeapBeforeBt, diagHeapAfterBt;
+extern TaskHandle_t taskNetworkHandle, taskAPRSHandle, taskAPRSPollHandle, taskGPSHandle;
+
+static const char *diagResetName(int r)
+{
+	switch (r)
+	{
+	case ESP_RST_POWERON: return "Power on";
+	case ESP_RST_EXT: return "External pin";
+	case ESP_RST_SW: return "Software restart";
+	case ESP_RST_PANIC: return "CRASH (panic)";
+	case ESP_RST_INT_WDT: return "CRASH (interrupt watchdog)";
+	case ESP_RST_TASK_WDT: return "CRASH (task watchdog)";
+	case ESP_RST_WDT: return "CRASH (other watchdog)";
+	case ESP_RST_DEEPSLEEP: return "Deep sleep wake";
+	case ESP_RST_BROWNOUT: return "BROWNOUT (low supply voltage)";
+	default: return "Unknown";
+	}
+}
+
+static void diagTaskRow(char *html, size_t cap, const char *name, TaskHandle_t h, int configured)
+{
+	char row[200];
+	if (h == NULL)
+		snprintf(row, sizeof(row), "<tr><td>%s</td><td>%d</td><td>not running</td></tr>\n", name, configured);
+	else
+		snprintf(row, sizeof(row), "<tr><td>%s</td><td>%d</td><td>%u</td></tr>\n", name, configured, (unsigned)uxTaskGetStackHighWaterMark(h));
+	strlcat(html, row, cap);
+}
+
+void handle_diag(AsyncWebServerRequest *request)
+{
+	if (!request->authenticate(config.http_username, config.http_password))
+		return request->requestAuthentication();
+	const size_t cap = 4096;
+	char *html = allocateStringMemory(cap);
+	if (!html)
+	{
+		request->send(500, "text/plain", "Memory allocation failed");
+		return;
+	}
+	char row[256];
+	strcpy(html, "<html><head><meta name=\"viewport\" content=\"width=device-width\"></head><body style=\"font-family:sans-serif\">\n");
+	strlcat(html, "<h3>SM0TGY v" FORK_VERSION " &ndash; diagnostics</h3>\n<table border=\"1\" cellpadding=\"3\">\n", cap);
+	snprintf(row, sizeof(row), "<tr><td>Uptime</td><td>%lu s</td></tr>\n", (unsigned long)(millis() / 1000));
+	strlcat(html, row, cap);
+	snprintf(row, sizeof(row), "<tr><td>Last reset</td><td>%s</td></tr>\n<tr><td>Crash resets in a row</td><td>%u</td></tr>\n", diagResetName(diagResetReason), (unsigned)diagCrashCount);
+	strlcat(html, row, cap);
+	snprintf(row, sizeof(row), "<tr><td>Heap free now</td><td>%u bytes</td></tr>\n<tr><td>Heap free, lowest since boot</td><td>%u bytes</td></tr>\n",
+			 (unsigned)ESP.getFreeHeap(), (unsigned)ESP.getMinFreeHeap());
+	strlcat(html, row, cap);
+	snprintf(row, sizeof(row), "<tr><td>Largest free block</td><td>%u bytes</td></tr>\n<tr><td>Heap total</td><td>%u bytes</td></tr>\n",
+			 (unsigned)heap_caps_get_largest_free_block(MALLOC_CAP_8BIT), (unsigned)ESP.getHeapSize());
+	strlcat(html, row, cap);
+	const char *bt = "off in settings";
+	if (diagBtStatus == 1) bt = "started";
+	else if (diagBtStatus == 2) bt = "START FAILED";
+	else if (diagBtStatus == 3) bt = "SKIPPED (crash resets in a row)";
+	snprintf(row, sizeof(row), "<tr><td>Bluetooth</td><td>%s %s</td></tr>\n", bt, diagBtError);
+	strlcat(html, row, cap);
+	if (diagHeapBeforeBt)
+	{
+		snprintf(row, sizeof(row), "<tr><td>Heap before / after Bluetooth start</td><td>%u / %u bytes (used %d)</td></tr>\n",
+				 (unsigned)diagHeapBeforeBt, (unsigned)diagHeapAfterBt, (int)diagHeapBeforeBt - (int)diagHeapAfterBt);
+		strlcat(html, row, cap);
+	}
+	snprintf(row, sizeof(row), "<tr><td>Wi-Fi</td><td>AP clients %d, STA %s</td></tr>\n", WiFi.softAPgetStationNum(), WiFi.isConnected() ? "connected" : "not connected");
+	strlcat(html, row, cap);
+	strlcat(html, "</table>\n<h4>Task stacks (bytes)</h4>\n<table border=\"1\" cellpadding=\"3\"><tr><th>Task</th><th>Size</th><th>Never used (min free)</th></tr>\n", cap);
+	diagTaskRow(html, cap, "taskNetwork", taskNetworkHandle, 12000);
+	diagTaskRow(html, cap, "taskAPRS", taskAPRSHandle, 4096);
+	diagTaskRow(html, cap, "taskAPRSPoll", taskAPRSPollHandle, 4096);
+	diagTaskRow(html, cap, "taskGPS", taskGPSHandle, 3072);
+	diagTaskRow(html, cap, "loopTask", xTaskGetHandle("loopTask"), 8192);
+	diagTaskRow(html, cap, "async_tcp", xTaskGetHandle("async_tcp"), 8192);
+	strlcat(html, "</table>\n<p><small>Reload to update. Values are measured, not estimates.</small></p></body></html>\n", cap);
+	AsyncWebServerResponse *response = beginBufferResponse(request, html);
+	response->addHeader("Cache-Control", "no-cache");
+	request->send(response);
+}
+
 void handle_sysinfo(AsyncWebServerRequest *request)
 {
 	// Using dynamic memory allocation instead of String
@@ -1098,7 +1184,7 @@ void handle_sysinfo(AsyncWebServerRequest *request)
 	strcpy(html, "<table style=\"table-layout: fixed;border-collapse: unset;border-radius: 10px;border-color: #ee800a;border-style: ridge;border-spacing: 1px;border-width: 4px;background: #ee800a;\">\n");
 	strcat(html, "<tr>\n");
 	strcat(html, "<th><span><b>Up Time</b></span></th>\n");
-	strcat(html, "<th><span>RAM(KByte)</span></th>\n");
+	strcat(html, "<th><span>RAM(KByte) <a href=\"/diag\" target=\"_diag\" style=\"font-size:8pt\">[diag]</a></span></th>\n");
 #ifdef BOARD_HAS_PSRAM
 	strcat(html, "<th><span>PSRAM(KByte)</span></th>\n");
 #endif
@@ -12259,6 +12345,8 @@ void webService()
 	// 				{ handle_symbol2(request); });
 	async_server.on("/logout", HTTP_GET, [](AsyncWebServerRequest *request)
 					{ handle_logout(request); });
+	async_server.on("/diag", HTTP_GET, [](AsyncWebServerRequest *request)
+					{ handle_diag(request); });
 	async_server.on("/symbols/icons", HTTP_GET, [](AsyncWebServerRequest *request)
 					{ handle_symbol_icon(request); });
 	async_server.on("/radio", HTTP_GET | HTTP_POST, [](AsyncWebServerRequest *request)
