@@ -1678,7 +1678,7 @@ void defaultConfig()
     config.tz_dst = true; // CEST in summer (EU rule)
     config.tx_timeslot = 2000; // ms
 
-    config.wifi_mode = WIFI_AP_STA_FIX;
+    config.wifi_mode = WIFI_AP_FIX; // SM0TGY: AP only by default; enable STA in the WiFi tab when a client network is added
     config.wifi_power = 74; // WIFI_POWER_18.5dBm
     config.wifi_ap_ch = 6;
     config.wifi_sta[0].enable = false;
@@ -3687,6 +3687,9 @@ void bluetooth_init()
 // 3 seconds WDT
 #define WDT_TIMEOUT 10
 
+// SM0TGY: Arduino loop task stack, measured max use ~2.5 kB (/diag, v1.15)
+SET_LOOP_TASK_STACK_SIZE(5 * 1024);
+
 bool AFSKInitAct = false;
 void setup()
 {
@@ -3772,6 +3775,12 @@ void setup()
             defaultConfig();
     }
     applyTimeZone();
+#ifdef BLUETOOTH
+    // SM0TGY: Bluetooth is only started at boot. When it is off in the settings, give
+    // the controller's reserved memory back to the heap (cannot be undone until reboot).
+    if (!config.bt_master)
+        esp_bt_controller_mem_release(ESP_BT_MODE_BTDM);
+#endif
 
     //setCpuFrequencyMhz(config.cpuFreq);
 
@@ -4103,7 +4112,7 @@ void setup()
     xTaskCreatePinnedToCore(
         taskNetwork,        /* Function to implement the task */
         "taskNetwork",      /* Name of the task */
-        12000,              /* Stack size in words */
+        7000,               /* Stack size in bytes. SM0TGY: measured max use ~3.9 kB incl. BLE start (/diag, v1.15) */
         NULL,               /* Task input parameter */
         1,                  /* Priority of the task */
         &taskNetworkHandle, /* Task handle. */
@@ -4112,7 +4121,7 @@ void setup()
     xTaskCreatePinnedToCore(
         taskAPRSPoll,        /* Function to implement the task */
         "taskAPRSPoll",      /* Name of the task */
-        4096,                /* Stack size in words */
+        2560,                /* Stack size in words */
         NULL,                /* Task input parameter */
         0,                   /* Priority of the task */
         &taskAPRSPollHandle, /* Task handle. */

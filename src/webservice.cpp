@@ -1205,12 +1205,12 @@ void handle_diag(AsyncWebServerRequest *request)
 			strlcat(html, "<tr><td>Last crash</td><td>no core dump stored</td></tr>\n", cap);
 	}
 	strlcat(html, "</table>\n<h4>Task stacks (bytes)</h4>\n<table border=\"1\" cellpadding=\"3\"><tr><th>Task</th><th>Size</th><th>Never used (min free)</th></tr>\n", cap);
-	diagTaskRow(html, cap, "taskNetwork", taskNetworkHandle, 12000);
+	diagTaskRow(html, cap, "taskNetwork", taskNetworkHandle, 7000);
 	diagTaskRow(html, cap, "taskAPRS", taskAPRSHandle, 4096);
-	diagTaskRow(html, cap, "taskAPRSPoll", taskAPRSPollHandle, 4096);
+	diagTaskRow(html, cap, "taskAPRSPoll", taskAPRSPollHandle, 2560);
 	diagTaskRow(html, cap, "taskGPS", taskGPSHandle, 3072);
-	diagTaskRow(html, cap, "loopTask", xTaskGetHandle("loopTask"), 8192);
-	diagTaskRow(html, cap, "async_tcp", xTaskGetHandle("async_tcp"), 8192);
+	diagTaskRow(html, cap, "loopTask", xTaskGetHandle("loopTask"), 5120);
+	diagTaskRow(html, cap, "async_tcp", xTaskGetHandle("async_tcp"), CONFIG_ASYNC_TCP_STACK_SIZE);
 	strlcat(html, "</table>\n<p><small>Reload to update. Values are measured, not estimates.</small></p></body></html>\n", cap);
 	AsyncWebServerResponse *response = beginBufferResponse(request, html);
 	response->addHeader("Cache-Control", "no-cache");
