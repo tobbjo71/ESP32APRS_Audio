@@ -7868,18 +7868,18 @@ void handle_igate(AsyncWebServerRequest *request)
 			{
 				if (w == 0)
 				{
-					snprintf(temp_opt, 256, "<option value=\"%d\" selected>%d</option>\n", k, k);
+					snprintf(temp_opt, 256, "<option value=\"%d\" selected>%d</option>\n", k, (int)(k * 0.3048f + 0.5f)); // value in feet (APRS PHG), shown in metres
 				}
 				else
 				{
-					snprintf(temp_opt, 256, "<option value=\"%d\">%d</option>\n", k, k);
+					snprintf(temp_opt, 256, "<option value=\"%d\">%d</option>\n", k, (int)(k * 0.3048f + 0.5f));
 				}
 				strcat(html, temp_opt);
 				free(temp_opt);
 			}
 			k += k;
 		}
-		strcat(html, "</select> Feet</td>\n");
+		strcat(html, "</select> m (HAAT)</td>\n");
 		strcat(html, "</tr>\n");
 		strcat(html, "<tr>\n");
 		strcat(html, "<td align=\"right\">Antenna/Direction</td>\n");
@@ -8749,16 +8749,16 @@ void handle_digi(AsyncWebServerRequest *request)
 		{
 			if (w == 0)
 			{
-				snprintf(tempHtml, sizeof(tempHtml), "<option value=\"%d\" selected>%d</option>\n", k, k);
+				snprintf(tempHtml, sizeof(tempHtml), "<option value=\"%d\" selected>%d</option>\n", k, (int)(k * 0.3048f + 0.5f)); // value in feet (APRS PHG), shown in metres
 			}
 			else
 			{
-				snprintf(tempHtml, sizeof(tempHtml), "<option value=\"%d\">%d</option>\n", k, k);
+				snprintf(tempHtml, sizeof(tempHtml), "<option value=\"%d\">%d</option>\n", k, (int)(k * 0.3048f + 0.5f));
 			}
 			strcat(html, tempHtml);
 			k += k;
 		}
-		strcat(html, "</select> Feet</td>\n");
+		strcat(html, "</select> m (HAAT)</td>\n");
 		strcat(html, "</tr>\n");
 		strcat(html, "<tr>\n");
 		strcat(html, "<td align=\"right\">Antenna/Direction</td>\n");
