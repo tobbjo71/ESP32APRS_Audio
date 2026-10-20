@@ -12304,7 +12304,8 @@ void onWsEvent(AsyncWebSocket *server, AsyncWebSocketClient *client, AwsEventTyp
 
 	if (type == WS_EVT_CONNECT)
 	{
-
+		// SM0TGY: at most two browser connections per live page; the oldest are closed
+		server->cleanupClients(2);
 		log_d("Websocket client connection received");
 	}
 	else if (type == WS_EVT_DISCONNECT)
@@ -12351,6 +12352,7 @@ void webService()
 		return;
 	}
 	ws.onEvent(onWsEvent);
+	ws_gnss.onEvent(onWsEvent);
 
 	// web client handlers
 	async_server.on("/", HTTP_GET, [](AsyncWebServerRequest *request)
@@ -12502,6 +12504,7 @@ void webService()
 
 	lastheard_events.onConnect([](AsyncEventSourceClient *client)
 							   {
+    if (lastheard_events.count() > 2) { client->close(); return; } // SM0TGY: max two dashboards
     if(client->lastId()){
       log_d("Client reconnected! Last message ID that it got is: %u\n", client->lastId());
     }
@@ -12514,6 +12517,7 @@ void webService()
 
 	message_events.onConnect([](AsyncEventSourceClient *client)
 							 {
+    if (message_events.count() > 2) { client->close(); return; } // SM0TGY: max two message pages
     if(client->lastId()){
       log_d("Client reconnected! Last message ID that it got is: %u\n", client->lastId());
     }
