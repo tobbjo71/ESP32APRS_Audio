@@ -879,7 +879,7 @@ void handle_diag(AsyncWebServerRequest *request)
 {
 	if (!request->authenticate(config.http_username, config.http_password))
 		return request->requestAuthentication();
-	const size_t cap = 4096;
+	const size_t cap = 6144;
 	char *html = allocateStringMemory(cap);
 	if (!html)
 	{
@@ -888,6 +888,7 @@ void handle_diag(AsyncWebServerRequest *request)
 	}
 	char row[256];
 	strcpy(html, "<html><head><meta name=\"viewport\" content=\"width=device-width\"></head><body style=\"font-family:sans-serif\">\n");
+	strlcat(html, "<p><a href=\"/\" style=\"display:inline-block;padding:10px 16px;background:#4C5A2E;color:#F7F3E8;border-radius:8px;text-decoration:none;font-weight:700\">&lsaquo; Back to the tracker</a></p>\n", cap); // SM0TGY: way back
 	strlcat(html, "<h3>SM0TGY v" FORK_VERSION " &ndash; diagnostics</h3>\n<table border=\"1\" cellpadding=\"3\">\n", cap);
 	snprintf(row, sizeof(row), "<tr><td>Uptime</td><td>%lu s</td></tr>\n", (unsigned long)(millis() / 1000));
 	strlcat(html, row, cap);
