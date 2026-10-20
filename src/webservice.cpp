@@ -7605,7 +7605,10 @@ void handle_igate(AsyncWebServerRequest *request)
 	{
 		// Allocate initial memory for HTML content
 		char tempHtml[512];
-		char *html = allocateStringMemory(25000);
+		// SM0TGY: page split in two (main settings / filter) to reduce the buffer peak.
+		// Measured whole page 15.1 kB (/diag); main part ~12 kB, filter part ~4 kB.
+		bool filterPart = request->hasArg("part") && request->arg("part") == "filter";
+		char *html = allocateStringMemory(filterPart ? 6000 : 15000);
 		if (!html)
 		{
 			request->send(500, "text/html", "Memory allocation failed");
@@ -7632,8 +7635,14 @@ void handle_igate(AsyncWebServerRequest *request)
 		strcat(html, "}\n");
 		strcat(html, "});\n");
 		strcat(html, "});\n");
-		strcat(html, "</script>\n<script type=\"text/javascript\">\n");
-
+		strcat(html, "</script>\n");
+		if (filterPart)
+		{
+			strcat(html, "<p><a href=\"#\" onclick=\"$('#contentmain').load('/igate');return false;\">&larr; IGATE settings</a></p>\n");
+		}
+		else
+		{
+		strcat(html, "<script type=\"text/javascript\">\n");
 		strcat(html, "function openWindowSymbol() {\n");
 		strcat(html, "var i, l, options = [{\n");
 		strcat(html, "value: 'first',\n");
@@ -7653,6 +7662,7 @@ void handle_igate(AsyncWebServerRequest *request)
 		strcat(html, "\n}\n");
 		strcat(html, "function calculatePHGR(){document.forms.formIgate.texttouse.value=\"PHG\"+calcPower(document.forms.formIgate.power.value)+calcHeight(document.forms.formIgate.haat.value)+calcGain(document.forms.formIgate.gain.value)+calcDirection(document.forms.formIgate.direction.selectedIndex)}function Log2(e){return Math.log(e)/Math.log(2)}function calcPerHour(e){return e<10?e:String.fromCharCode(65+(e-10))}function calcHeight(e){return String.fromCharCode(48+Math.round(Log2(e/10),0))}function calcPower(e){if(e<1)return 0;if(e>=1&&e<4)return 1;if(e>=4&&e<9)return 2;if(e>=9&&e<16)return 3;if(e>=16&&e<25)return 4;if(e>=25&&e<36)return 5;if(e>=36&&e<49)return 6;if(e>=49&&e<64)return 7;if(e>=64&&e<81)return 8;if(e>=81)return 9}function calcDirection(e){if(e==\"0\")return\"0\";if(e==\"1\")return\"1\";if(e==\"2\")return\"2\";if(e==\"3\")return\"3\";if(e==\"4\")return\"4\";if(e==\"5\")return\"5\";if(e==\"6\")return\"6\";if(e==\"7\")return\"7\";if(e==\"8\")return\"8\"}function calcGain(e){return e>9?\"9\":e<0?\"0\":Math.round(e,0)}\n");
 		strcat(html, "function onRF2INETCheck() {\n");
+		strcat(html, "if (!document.getElementById(\"rf2inetFilterGrp\")) return;\n");
 		strcat(html, "if (document.querySelector('#rf2inetEnable').checked) {\n");
 		// Checkbox has been checked
 		strcat(html, "document.getElementById(\"rf2inetFilterGrp\").disabled=false;\n");
@@ -7661,6 +7671,7 @@ void handle_igate(AsyncWebServerRequest *request)
 		strcat(html, "document.getElementById(\"rf2inetFilterGrp\").disabled=true;\n");
 		strcat(html, "}\n}\n");
 		strcat(html, "function onINET2RFCheck() {\n");
+		strcat(html, "if (!document.getElementById(\"inet2rfFilterGrp\")) return;\n");
 		strcat(html, "if (document.querySelector('#inet2rfEnable').checked) {\n");
 		// Checkbox has been checked
 		strcat(html, "document.getElementById(\"inet2rfFilterGrp\").disabled=false;\n");
@@ -7969,8 +7980,11 @@ void handle_igate(AsyncWebServerRequest *request)
 		strcat(html, "<div><button class=\"button\" type='submit' id='submitIGATE'  name=\"commitIGATE\"> Apply Change </button></div>\n");
 		strcat(html, "<input type=\"hidden\" name=\"commitIGATE\"/>\n");
 		strcat(html, "</td></tr></table><br />\n");
-		strcat(html, "</form><br /><br />");
-
+		strcat(html, "</form><br />");
+		strcat(html, "<p><a href=\"#\" onclick=\"$('#contentmain').load('/igate?part=filter');return false;\">IGATE filter &rarr;</a></p>\n");
+		} // end main part
+		if (filterPart)
+		{
 		strcat(html, "<form id='formIgateFilter' method=\"POST\" action='#' enctype='multipart/form-data'>\n");
 		strcat(html, "<table>\n");
 		strcat(html, "<th colspan=\"2\"><span><b>[IGATE] Filter</b></span></th>\n");
@@ -8085,6 +8099,7 @@ void handle_igate(AsyncWebServerRequest *request)
 		strcat(html, "<input type=\"hidden\" name=\"commitIGATEfilter\"/>\n");
 		strcat(html, "</td></tr></table><br />\n");
 		strcat(html, "</form><br />");
+		} // end filter part
 
 		AsyncWebServerResponse *response = beginBufferResponse(request, html);
 		response->addHeader("IGATE", "content");
