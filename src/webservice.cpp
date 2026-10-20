@@ -1109,6 +1109,7 @@ extern char diagMaxPageUrl[32];
 extern unsigned diagMaxFill;
 extern char diagMaxFillUrl[32];
 extern int diagResetReason;
+extern bool diagLastWasLowHeap;
 extern uint32_t diagCrashCount;
 extern int diagBtStatus;
 extern char diagBtError[64];
@@ -1158,7 +1159,7 @@ void handle_diag(AsyncWebServerRequest *request)
 	strlcat(html, "<h3>SM0TGY v" FORK_VERSION " &ndash; diagnostics</h3>\n<table border=\"1\" cellpadding=\"3\">\n", cap);
 	snprintf(row, sizeof(row), "<tr><td>Uptime</td><td>%lu s</td></tr>\n", (unsigned long)(millis() / 1000));
 	strlcat(html, row, cap);
-	snprintf(row, sizeof(row), "<tr><td>Last reset</td><td>%s</td></tr>\n<tr><td>Crash resets in a row</td><td>%u</td></tr>\n", diagResetName(diagResetReason), (unsigned)diagCrashCount);
+	snprintf(row, sizeof(row), "<tr><td>Last reset</td><td>%s</td></tr>\n<tr><td>Crash resets in a row</td><td>%u</td></tr>\n", diagLastWasLowHeap ? "Software restart (LOW HEAP guard)" : diagResetName(diagResetReason), (unsigned)diagCrashCount);
 	strlcat(html, row, cap);
 	snprintf(row, sizeof(row), "<tr><td>Heap free now</td><td>%u bytes</td></tr>\n<tr><td>Heap free, lowest since boot</td><td>%u bytes</td></tr>\n",
 			 (unsigned)ESP.getFreeHeap(), (unsigned)ESP.getMinFreeHeap());

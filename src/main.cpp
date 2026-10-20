@@ -3596,6 +3596,8 @@ void postTransmission()
 // ---- SM0TGY diagnostics (shown on /diag) ----
 RTC_NOINIT_ATTR uint32_t diagCrashMagic;
 RTC_NOINIT_ATTR uint32_t diagCrashCount; // consecutive boots after a crash/watchdog reset
+RTC_NOINIT_ATTR uint32_t diagLowHeapRestart; // 0xA5A5 = last restart was the low-heap guard
+bool diagLastWasLowHeap = false;
 int diagResetReason = 0;
 int diagBtStatus = 0; // 0 off in config, 1 started, 2 start failed, 3 skipped after repeated crashes
 char diagBtError[64] = "";
@@ -3605,6 +3607,8 @@ void diagBootCheck()
 {
     esp_reset_reason_t r = esp_reset_reason();
     diagResetReason = (int)r;
+    diagLastWasLowHeap = (r == ESP_RST_SW && diagLowHeapRestart == 0xA5A5);
+    diagLowHeapRestart = 0;
     if (diagCrashMagic != 0x5A5A1234)
     {
         diagCrashMagic = 0x5A5A1234;
@@ -5683,21 +5687,22 @@ void loop()
         VBat_Flag = true;
         #endif
 
-        // Automatic Restart when heap memory not enough
+        // Automatic Restart when heap memory not enough.
+        // SM0TGY: upstream used 50 kB, which this board (no PSRAM) is below as soon as
+        // Bluetooth runs, and it called WiFi.disconnect() after vTaskSuspendAll(), which
+        // asserts (Wi-Fi API mutex with the scheduler suspended) -> panic -> crash loop.
+        // Decoded from the core dump on 2026-10-20. Now: restart only below 12 kB for
+        // 10 s in a row (a real leak), plain esp_restart(), reason shown on /diag.
         #ifdef __XTENSA__
-        if (ESP.getFreeHeap() < 50000)
+        if (ESP.getFreeHeap() < 12000)
         #else
         if (ESP.getFreeHeap() < 70000)
         #endif
         {
-            if (++heapCount > 5)
+            if (++heapCount > 10)
             {
                 heapCount = 0;
-                vTaskSuspendAll();
-                WiFi.disconnect(true); // Disconnect from the network
-                WiFi.persistent(false);
-                WiFi.mode(WIFI_OFF); // Switch WiFi off
-                //PowerOff();
+                diagLowHeapRestart = 0xA5A5;
                 esp_restart();
             }
         }
@@ -5712,11 +5717,7 @@ void loop()
         {
             autoResetTimeout = millis() + (config.reset_timeout * 60000);
             log_d("Auto Reset System");
-            vTaskSuspendAll();
-            WiFi.disconnect(true); // Disconnect from the network
-            WiFi.persistent(false);
-            WiFi.mode(WIFI_OFF); // Switch WiFi off
-            // PowerOff();
+            // SM0TGY: no Wi-Fi calls after vTaskSuspendAll() (asserts -> panic); esp_restart() stops Wi-Fi itself
             esp_restart();
         }
     }
