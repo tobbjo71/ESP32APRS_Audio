@@ -3593,6 +3593,9 @@ void postTransmission()
     digitalWrite(config.modbus_de_gpio, 0);
 }
 
+#ifdef BLUETOOTH
+#include "esp_bt.h"
+#endif
 // ---- SM0TGY diagnostics (shown on /diag) ----
 RTC_NOINIT_ATTR uint32_t diagCrashMagic;
 RTC_NOINIT_ATTR uint32_t diagCrashCount; // consecutive boots after a crash/watchdog reset
