@@ -5,8 +5,8 @@
  (branch fw-ota of github.com/tobbjo71/ESP32APRS_Audio, plain HTTP/1.1 GET:
  HTTPClient would pull strptime/mktime into IRAM, which is full) and, when the user confirms,
  downloads the matching _ota.bin into the other OTA slot, checks its MD5 and restarts.
- Server certificates are checked by mbedTLS against embedded Mozilla root CAs
- (include/ota_roots.h). Only builds of this fork are offered; upstream
+ Server certificates are checked against embedded Mozilla root CAs (include/ota_bundle.h),
+ see otaVerifyCb. Only builds of this fork are offered; upstream
  firmware is never installed. The work runs in its own task; the web page polls
  /ota/status.
 */
@@ -26,8 +26,93 @@
 #define FORK_OTA_HOST "raw.githubusercontent.com"
 #define FORK_OTA_PATH "/tobbjo71/ESP32APRS_Audio/fw-ota/"
 
-#include "ota_roots.h"
-#include "esp_heap_caps.h"
+#include "ota_bundle.h"
+#include "mbedtls/x509_crt.h"
+#include "mbedtls/md.h"
+#include "mbedtls/ssl.h"
+
+// Certificate check: same idea as ESP-IDF's x509 bundle (the server's chain must end in a cert
+// signed by a root in OTA_BUNDLE), but without its binary search, accepting a presented copy of a
+// trusted root (cross-signed), and recording why a chain was rejected. mbedTLS still checks
+// validity dates and the host name. Only one public key is parsed at a time (little RAM).
+static char otaVrfy[150] = "";
+static const mbedtls_x509_crt otaDummyCa = {}; // non-NULL CA pointer for the handshake
+
+static int otaCheckSig(const mbedtls_x509_crt *child, const uint8_t *key, size_t keyLen)
+{
+	mbedtls_x509_crt parent;
+	unsigned char hash[MBEDTLS_MD_MAX_SIZE];
+	mbedtls_x509_crt_init(&parent);
+	int ret = mbedtls_pk_parse_public_key(&parent.pk, key, keyLen);
+	if (ret == 0 && !mbedtls_pk_can_do(&parent.pk, child->MBEDTLS_PRIVATE(sig_pk)))
+		ret = -1;
+	const mbedtls_md_info_t *md = mbedtls_md_info_from_type(child->MBEDTLS_PRIVATE(sig_md));
+	if (ret == 0 && md == NULL)
+		ret = -2;
+	if (ret == 0)
+		ret = mbedtls_md(md, child->tbs.p, child->tbs.len, hash);
+	if (ret == 0)
+		ret = mbedtls_pk_verify_ext(child->MBEDTLS_PRIVATE(sig_pk), child->MBEDTLS_PRIVATE(sig_opts), &parent.pk,
+									child->MBEDTLS_PRIVATE(sig_md), hash, mbedtls_md_get_size(md),
+									child->MBEDTLS_PRIVATE(sig).p, child->MBEDTLS_PRIVATE(sig).len);
+	mbedtls_x509_crt_free(&parent);
+	return ret;
+}
+
+static int otaVerifyCb(void *, mbedtls_x509_crt *crt, int depth, uint32_t *flags)
+{
+	uint32_t f = *flags & ~MBEDTLS_X509_BADCERT_BAD_MD;
+	if (f == 0)
+		return 0;
+	char dn[80];
+	if (f != MBEDTLS_X509_BADCERT_NOT_TRUSTED)
+	{
+		mbedtls_x509_dn_gets(dn, sizeof(dn), &crt->subject);
+		snprintf(otaVrfy, sizeof(otaVrfy), "cert %d (%s) flags 0x%lx", depth, dn, (unsigned long)*flags);
+		return 0; // leave the flags: the handshake fails
+	}
+	const uint8_t *b = OTA_BUNDLE;
+	int n = (b[0] << 8) | b[1];
+	const uint8_t *p = b + 2;
+	for (int i = 0; i < n; i++)
+	{
+		size_t nl = (p[0] << 8) | p[1], kl = (p[2] << 8) | p[3];
+		const uint8_t *name = p + 4, *key = name + nl;
+		if (nl == crt->issuer_raw.len && memcmp(name, crt->issuer_raw.p, nl) == 0 && otaCheckSig(crt, key, kl) == 0)
+		{
+			*flags = 0;
+			return 0;
+		}
+		if (nl == crt->subject_raw.len && memcmp(name, crt->subject_raw.p, nl) == 0 && kl == crt->pk_raw.len &&
+			memcmp(key, crt->pk_raw.p, kl) == 0)
+		{
+			*flags = 0; // the presented certificate is itself a trusted root (e.g. cross-signed copy)
+			return 0;
+		}
+		p = key + kl;
+	}
+	mbedtls_x509_dn_gets(dn, sizeof(dn), &crt->issuer);
+	snprintf(otaVrfy, sizeof(otaVrfy), "no trusted root for issuer %s (cert %d)", dn, depth);
+	return 0;
+}
+
+static esp_err_t otaAttach(void *conf)
+{
+	mbedtls_ssl_config *c = (mbedtls_ssl_config *)conf;
+	mbedtls_ssl_conf_ca_chain(c, (mbedtls_x509_crt *)&otaDummyCa, NULL);
+	mbedtls_ssl_conf_verify(c, otaVerifyCb, NULL);
+	return ESP_OK;
+}
+
+class OtaClient : public NetworkClientSecure
+{
+public:
+	void useOtaRoots()
+	{
+		setCACertBundle(OTA_BUNDLE, sizeof(OTA_BUNDLE)); // marks the client as "bundle" mode
+		sslclient->bundle_attach_cb = otaAttach;		 // ...and uses our check instead of IDF's
+	}
+};
 
 enum OtaState { OTA_IDLE, OTA_CHECKING, OTA_AVAILABLE, OTA_UPTODATE, OTA_DOWNLOADING, OTA_DONE, OTA_ERROR };
 static volatile OtaState otaState = OTA_IDLE;
@@ -98,7 +183,7 @@ static void otaChainInfo(IPAddress ip)
 }
 
 // Minimal HTTPS GET: returns status code (or <0), fills content length. Headers are consumed.
-static int httpsGet(NetworkClientSecure *cli, const char *path, long *clen)
+static int httpsGet(OtaClient *cli, const char *path, long *clen)
 {
 	*clen = -1;
 	IPAddress ip;
@@ -112,17 +197,15 @@ static int httpsGet(NetworkClientSecure *cli, const char *path, long *clen)
 		strlcpy(otaErr, "Clock not set (needs GPS fix or NTP) - certificates cannot be checked", sizeof(otaErr));
 		return -11;
 	}
-	// The root list is parsed during connect (about 170 certificates); let those
-	// allocations go to PSRAM instead of the small internal heap.
-	heap_caps_malloc_extmem_enable(64);
-	int ok = cli->connect(ip, 443, FORK_OTA_HOST, OTA_ROOTS_PEM, NULL, NULL);
-	heap_caps_malloc_extmem_enable(4096);
-	if (!ok)
+	otaVrfy[0] = 0;
+	if (!cli->connect(ip, 443, FORK_OTA_HOST, NULL, NULL, NULL))
 	{
 		char e[64] = "";
 		int code = cli->lastError(e, sizeof(e));
-		snprintf(otaErr, sizeof(otaErr), "TLS to %s failed: %s (%d), free RAM %u", ip.toString().c_str(), e, code, (unsigned)ESP.getFreeHeap());
-		otaChainInfo(ip);
+		snprintf(otaErr, sizeof(otaErr), "TLS to %s failed: %s (%d)%s%s, free RAM %u", ip.toString().c_str(), e, code, otaVrfy[0] ? ": " : "", otaVrfy, (unsigned)ESP.getFreeHeap());
+		cli->stop(); // free the first TLS context before the diagnostic connection
+		if (!otaVrfy[0])
+			otaChainInfo(ip);
 		return -12;
 	}
 	cli->printf("GET %s HTTP/1.1\r\nHost: " FORK_OTA_HOST "\r\nUser-Agent: SM0TGY-APRSTracker/" FORK_VERSION "\r\nConnection: close\r\n\r\n", path);
@@ -145,8 +228,8 @@ static int httpsGet(NetworkClientSecure *cli, const char *path, long *clen)
 
 static void otaCheckTask(void *)
 {
-	NetworkClientSecure *cli = new NetworkClientSecure();
-	cli->setCACert(OTA_ROOTS_PEM);
+	OtaClient *cli = new OtaClient();
+	cli->useOtaRoots();
 	long clen;
 	int code = httpsGet(cli, FORK_OTA_PATH "manifest_" FORK_OTA_VARIANT ".json", &clen);
 	if (code != 200)
@@ -181,8 +264,8 @@ static void otaCheckTask(void *)
 
 static void otaInstallTask(void *)
 {
-	NetworkClientSecure *cli = new NetworkClientSecure();
-	cli->setCACert(OTA_ROOTS_PEM);
+	OtaClient *cli = new OtaClient();
+	cli->useOtaRoots();
 	char path[128];
 	snprintf(path, sizeof(path), FORK_OTA_PATH "%s", otaFile);
 	bool ok = false;
