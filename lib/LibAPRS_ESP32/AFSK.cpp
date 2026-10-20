@@ -303,12 +303,14 @@ void LED_Status2(uint8_t r, uint8_t g, uint8_t b)
       r_old = r;
       g_old = g;
       b_old = b;
+#ifndef FORK_SLIM // SM0TGY: no RGB LED on APRS Interface V1; keeps the RMT driver out of IRAM
       if (_led_strip_pin > -1 && strip != NULL)
       {
         strip->setPixelColor(0, strip->Color(r, g, b));
         strip->show();
       }
       else
+#endif
       {
         if (_led_tx_pin > -1)
         {
@@ -1272,11 +1274,13 @@ void AFSK_hw_init(void)
   {
     pinMode(_led_rx_pin, OUTPUT);
   }
+#ifndef FORK_SLIM
   if (_led_strip_pin > -1)
   {
     if (strip == NULL)
       strip = new Adafruit_NeoPixel(1, _led_strip_pin, NEO_GRB + NEO_KHZ800);
   }
+#endif
 
   if (_pwr_pin > -1)
     digitalWrite(_pwr_pin, !_pwr_active);

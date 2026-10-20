@@ -1169,7 +1169,11 @@ void handle_diag(AsyncWebServerRequest *request)
 			 (unsigned)ESP.getFreeHeap(), (unsigned)ESP.getMinFreeHeap());
 	strlcat(html, row, cap);
 	snprintf(row, sizeof(row), "<tr><td>Largest free block</td><td>%u bytes</td></tr>\n<tr><td>Heap total</td><td>%u bytes</td></tr>\n",
-			 (unsigned)heap_caps_get_largest_free_block(MALLOC_CAP_8BIT), (unsigned)ESP.getHeapSize());
+			 (unsigned)heap_caps_get_largest_free_block(MALLOC_CAP_INTERNAL | MALLOC_CAP_8BIT), (unsigned)ESP.getHeapSize());
+	strlcat(html, row, cap);
+	// SM0TGY: PSRAM (WROVER-E). Heap rows above are internal RAM only.
+	snprintf(row, sizeof(row), "<tr><td>PSRAM free / total</td><td>%u / %u bytes</td></tr>\n",
+			 (unsigned)ESP.getFreePsram(), (unsigned)ESP.getPsramSize());
 	strlcat(html, row, cap);
 	const char *bt = "off in settings";
 	if (diagBtStatus == 1) bt = "started";

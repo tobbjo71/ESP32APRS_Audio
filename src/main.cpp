@@ -3801,6 +3801,7 @@ void setup()
     config.i2c_freq = 400000;
     #endif
 
+#ifndef FORK_SLIM // SM0TGY: I2C not routed on APRS Interface V1; keeps the I2C driver out of IRAM
     if (config.i2c_enable)
     {
         Wire.begin(config.i2c_sda_pin, config.i2c_sck_pin, config.i2c_freq);
@@ -3813,6 +3814,7 @@ void setup()
     {
         Wire1.begin(config.i2c1_sda_pin, config.i2c1_sck_pin, config.i2c1_freq);
     }
+#endif // FORK_SLIM
 
 #ifdef OLED
     if (config.oled_enable)
