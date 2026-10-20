@@ -7032,6 +7032,26 @@ void taskAPRS(void *pvParameters)
                 tickInterval = millis() + 1000;
 
                 tx_counter++;
+                // SM0TGY: one beacon 30 s after the first GPS fix since start, then the normal rate
+                {
+                    static bool firstFixSent = false;
+                    static unsigned long fixSince = 0;
+                    if (!firstFixSent && config.trk_gps)
+                    {
+                        if (gps.location.isValid() && gps.satellites.value() > 3 && gps.hdop.hdop() < 10)
+                        {
+                            if (fixSince == 0)
+                                fixSince = millis();
+                            else if (millis() - fixSince > 30000)
+                            {
+                                firstFixSent = true;
+                                EVENT_TX_POSITION = 9;
+                            }
+                        }
+                        else
+                            fixSince = 0;
+                    }
+                }
                 // log_d("TRACKER tx_counter=%d\t INTERVAL=%d\n", tx_counter, tx_interval);
                 //   Check interval timeout
                 if (config.trk_smartbeacon && config.trk_gps)
@@ -8383,6 +8403,7 @@ bool wifiDisconnecting = false;
 uint16_t wifiDisCount = 0;
 unsigned long vpnTimeout = 0;
 unsigned long mitiWifiTimeout = 0;
+volatile bool wifiReloadRequest = false; // SM0TGY: set by the web page after Wi-Fi client changes
 
 // WiFi current AP tracking for stable reconnection
 String currentAPSSID = "";
@@ -8896,6 +8917,22 @@ void taskNetwork(void *pvParameters)
             }
         }
 
+        if (wifiReloadRequest)
+        {
+            // SM0TGY: Wi-Fi client list changed on the web page; use it without a restart
+            wifiReloadRequest = false;
+            if ((config.wifi_mode & WIFI_STA_FIX) && !(WiFi.getMode() & WIFI_MODE_STA))
+                WiFi.mode((config.wifi_mode & WIFI_AP_FIX) ? WIFI_MODE_APSTA : WIFI_MODE_STA);
+            wifiMulti.APlistClean();
+            for (int i = 0; i < 5; i++)
+                if (config.wifi_sta[i].enable)
+                    wifiMulti.addAP(config.wifi_sta[i].wifi_ssid, config.wifi_sta[i].wifi_pass);
+            currentAPIndex = -1;
+            mitiWifiTimeout = millis() + 30000;
+            if (config.wifi_mode & WIFI_STA_FIX)
+                wifiMulti.run(8000); // one attempt now, even with clients on the own AP
+            log_d("WiFi client list reloaded");
+        }
         if (config.wifi_mode & WIFI_AP_FIX)
         {
             APStationNum = WiFi.softAPgetStationNum();

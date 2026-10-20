@@ -175,6 +175,7 @@ extern unsigned long waitISRetry;
 extern volatile int8_t adcEn;
 extern volatile int8_t dacEn;
 extern unsigned long upTimeStamp;
+extern volatile bool wifiReloadRequest;
 extern double VBat;
 extern bool VBat_Flag;
 
@@ -10952,7 +10953,7 @@ void handle_wireless(AsyncWebServerRequest *request)
 				{
 					if (request->arg(i) != "")
 					{
-						strcpy(config.wifi_sta[n].wifi_ssid, request->arg(i).c_str());
+						strlcpy(config.wifi_sta[n].wifi_ssid, request->arg(i).c_str(), sizeof(config.wifi_sta[n].wifi_ssid));
 					}
 				}
 				String namePASS = "wifi_pass" + String(n);
@@ -10960,7 +10961,7 @@ void handle_wireless(AsyncWebServerRequest *request)
 				{
 					if (request->arg(i) != "")
 					{
-						strcpy(config.wifi_sta[n].wifi_pass, request->arg(i).c_str());
+						strlcpy(config.wifi_sta[n].wifi_pass, request->arg(i).c_str(), sizeof(config.wifi_sta[n].wifi_pass));
 					}
 				}
 			}
@@ -10986,6 +10987,7 @@ void handle_wireless(AsyncWebServerRequest *request)
 			config.wifi_mode &= ~WIFI_STA_FIX;
 		}
 		saveConfig(request);
+		wifiReloadRequest = true; // SM0TGY: network task picks up the new list
 	}
 	#ifdef BLUETOOTH
 	else if (request->hasArg("commitBluetooth"))
