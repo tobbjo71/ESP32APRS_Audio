@@ -2628,6 +2628,7 @@ String handleATCommand(String cmd)
         return "OK";
     }
 
+#ifndef FORK_SLIM
     if (cmd == "AT+PWR_EN?")
         return String(config.pwr_en ? "1" : "0");
     else if (cmd == "AT+PWR_EN=1")
@@ -2693,6 +2694,7 @@ String handleATCommand(String cmd)
         config.pwr_active = false;
         return "OK";
     }
+#endif // FORK_SLIM
 
     if (cmd == "AT+DISP_FLIP?")
         return String(config.disp_flip ? "1" : "0");

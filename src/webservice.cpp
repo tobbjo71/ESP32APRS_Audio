@@ -62,9 +62,17 @@ char *allocateStringMemory(size_t size)
 // fails silently on boards without PSRAM for large pages (empty/white page).
 // The buffer is shrunk to its used size, streamed directly, and freed when the
 // request is finished (onDisconnect). The caller must not free it.
+size_t diagMaxPage = 0;        // largest page sent since boot (bytes)
+char diagMaxPageUrl[32] = "";
+
 AsyncWebServerResponse *beginBufferResponse(AsyncWebServerRequest *request, char *buf)
 {
 	size_t len = strlen(buf);
+	if (len > diagMaxPage)
+	{
+		diagMaxPage = len;
+		strlcpy(diagMaxPageUrl, request->url().c_str(), sizeof(diagMaxPageUrl));
+	}
 	char *shrunk = (char *)realloc(buf, len + 1);
 	if (shrunk != NULL)
 		buf = shrunk;
@@ -1087,6 +1095,8 @@ void handle_symbol(AsyncWebServerRequest *request)
 }
 
 // ---- SM0TGY: memory and stability diagnostics (/diag) ----
+extern size_t diagMaxPage;
+extern char diagMaxPageUrl[32];
 extern int diagResetReason;
 extern uint32_t diagCrashCount;
 extern int diagBtStatus;
@@ -1157,6 +1167,8 @@ void handle_diag(AsyncWebServerRequest *request)
 				 (unsigned)diagHeapBeforeBt, (unsigned)diagHeapAfterBt, (int)diagHeapBeforeBt - (int)diagHeapAfterBt);
 		strlcat(html, row, cap);
 	}
+	snprintf(row, sizeof(row), "<tr><td>Largest web page since boot</td><td>%u bytes (%s)</td></tr>\n", (unsigned)diagMaxPage, diagMaxPageUrl);
+	strlcat(html, row, cap);
 	snprintf(row, sizeof(row), "<tr><td>Wi-Fi</td><td>AP clients %d, STA %s</td></tr>\n", WiFi.softAPgetStationNum(), WiFi.isConnected() ? "connected" : "not connected");
 	strlcat(html, row, cap);
 	strlcat(html, "</table>\n<h4>Task stacks (bytes)</h4>\n<table border=\"1\" cellpadding=\"3\"><tr><th>Task</th><th>Size</th><th>Never used (min free)</th></tr>\n", cap);
@@ -6051,6 +6063,7 @@ void handle_system(AsyncWebServerRequest *request)
 		}
 		saveConfig(request);
 	}
+#ifndef FORK_SLIM
 	else if (request->hasArg("commitPWR"))
 	{
 		bool PwrEn = false;
@@ -6178,6 +6191,7 @@ void handle_system(AsyncWebServerRequest *request)
 		config.pwr_en = PwrEn;
 		saveConfig(request);
 	}
+#endif // FORK_SLIM (power save: settings had no effect on ESP32)
 	else if (request->hasArg("commitLOG"))
 	{
 		bool PwrEn = false;
@@ -6601,6 +6615,7 @@ void handle_system(AsyncWebServerRequest *request)
 		strcat(html, "</td></tr></table><br />\n");
 		strcat(html, "</form><br /><br />");
 
+#ifndef FORK_SLIM
 		/**************Power Mode******************/
 		strcat(html, "<form accept-charset=\"UTF-8\" action=\"#\" class=\"form-horizontal\" id=\"formPWR\" method=\"post\">\n");
 		strcat(html, "<table>\n");
@@ -6746,6 +6761,7 @@ void handle_system(AsyncWebServerRequest *request)
 		strcat(html, "</td></tr></table>\n");
 
 		strcat(html, "</form><br /><br />\n");
+#endif // FORK_SLIM (power save: settings had no effect on ESP32)
 
 		#ifdef LOG_FILE
 		/**************Log File******************/
