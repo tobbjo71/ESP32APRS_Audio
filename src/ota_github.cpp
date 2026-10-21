@@ -30,6 +30,30 @@
 #include "mbedtls/x509_crt.h"
 #include "mbedtls/md.h"
 #include "mbedtls/ssl.h"
+#include "mbedtls/platform.h"
+#include "esp_heap_caps.h"
+
+// mbedTLS in the Arduino libraries allocates only internal RAM (CONFIG_MBEDTLS_INTERNAL_MEM_ALLOC).
+// A TLS session needs ~45 kB of it; with BLE running that left 2.6 kB and the RSA check of the
+// server certificate failed with MPI alloc failed (-0x4290, v1.34). While an update task runs,
+// mbedTLS allocates from PSRAM first (the same as ESP-IDF's EXTERNAL_MEM_ALLOC option).
+static void *otaCalloc(size_t n, size_t size)
+{
+	void *p = heap_caps_calloc(n, size, MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT);
+	return p ? p : heap_caps_calloc(n, size, MALLOC_CAP_INTERNAL | MALLOC_CAP_8BIT);
+}
+static void *otaCallocInternal(size_t n, size_t size)
+{
+	return heap_caps_calloc(n, size, MALLOC_CAP_INTERNAL | MALLOC_CAP_8BIT); // as esp_mbedtls_mem_calloc
+}
+static void otaFree(void *p)
+{
+	heap_caps_free(p); // frees internal and PSRAM blocks alike
+}
+static void otaMemPsram(bool on)
+{
+	mbedtls_platform_set_calloc_free(on ? otaCalloc : otaCallocInternal, otaFree);
+}
 
 // Certificate check: same idea as ESP-IDF's x509 bundle (the server's chain must end in a cert
 // signed by a root in OTA_BUNDLE), but without its binary search, accepting a presented copy of a
@@ -235,6 +259,7 @@ static int httpsGet(OtaClient *cli, const char *path, long *clen)
 
 static void otaCheckTask(void *)
 {
+	otaMemPsram(true);
 	OtaClient *cli = new OtaClient();
 	cli->useOtaRoots();
 	long clen;
@@ -265,12 +290,14 @@ static void otaCheckTask(void *)
 	}
 	cli->stop();
 	delete cli;
+	otaMemPsram(false);
 	otaTask = NULL;
 	vTaskDelete(NULL);
 }
 
 static void otaInstallTask(void *)
 {
+	otaMemPsram(true);
 	OtaClient *cli = new OtaClient();
 	cli->useOtaRoots();
 	char path[128];
@@ -338,6 +365,7 @@ static void otaInstallTask(void *)
 		vTaskDelay(1500 / portTICK_PERIOD_MS);
 		esp_restart();
 	}
+	otaMemPsram(false);
 	otaTask = NULL;
 	vTaskDelete(NULL);
 }
