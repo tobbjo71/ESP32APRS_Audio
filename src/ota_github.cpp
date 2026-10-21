@@ -35,7 +35,7 @@
 // signed by a root in OTA_BUNDLE), but without its binary search, accepting a presented copy of a
 // trusted root (cross-signed), and recording why a chain was rejected. mbedTLS still checks
 // validity dates and the host name. Only one public key is parsed at a time (little RAM).
-static char otaVrfy[150] = "";
+static char otaVrfy[220] = "";
 static const mbedtls_x509_crt otaDummyCa = {}; // non-NULL CA pointer for the handshake
 
 static int otaCheckSig(const mbedtls_x509_crt *child, const uint8_t *key, size_t keyLen)
@@ -74,14 +74,20 @@ static int otaVerifyCb(void *, mbedtls_x509_crt *crt, int depth, uint32_t *flags
 	const uint8_t *b = OTA_BUNDLE;
 	int n = (b[0] << 8) | b[1];
 	const uint8_t *p = b + 2;
+	int nameHits = 0, sigErr = 0;
 	for (int i = 0; i < n; i++)
 	{
 		size_t nl = (p[0] << 8) | p[1], kl = (p[2] << 8) | p[3];
 		const uint8_t *name = p + 4, *key = name + nl;
-		if (nl == crt->issuer_raw.len && memcmp(name, crt->issuer_raw.p, nl) == 0 && otaCheckSig(crt, key, kl) == 0)
+		if (nl == crt->issuer_raw.len && memcmp(name, crt->issuer_raw.p, nl) == 0)
 		{
-			*flags = 0;
-			return 0;
+			nameHits++;
+			sigErr = otaCheckSig(crt, key, kl);
+			if (sigErr == 0)
+			{
+				*flags = 0;
+				return 0;
+			}
 		}
 		if (nl == crt->subject_raw.len && memcmp(name, crt->subject_raw.p, nl) == 0 && kl == crt->pk_raw.len &&
 			memcmp(key, crt->pk_raw.p, kl) == 0)
@@ -92,7 +98,8 @@ static int otaVerifyCb(void *, mbedtls_x509_crt *crt, int depth, uint32_t *flags
 		p = key + kl;
 	}
 	mbedtls_x509_dn_gets(dn, sizeof(dn), &crt->issuer);
-	snprintf(otaVrfy, sizeof(otaVrfy), "no trusted root for issuer %s (cert %d)", dn, depth);
+	snprintf(otaVrfy, sizeof(otaVrfy), "no trusted root for issuer %s (cert %d, %d of %d names matched, sig -0x%x, issuer %u B, sig alg %d)",
+			 dn, depth, nameHits, n, (unsigned)(-sigErr), (unsigned)crt->issuer_raw.len, (int)crt->MBEDTLS_PRIVATE(sig_md));
 	return 0;
 }
 
@@ -121,7 +128,7 @@ static char otaLatest[16] = "";
 static char otaFile[64] = "";
 static char otaMd5[40] = "";
 static uint32_t otaSize = 0;
-static char otaErr[300] = "";
+static char otaErr[360] = "";
 static TaskHandle_t otaTask = NULL;
 
 static int verNum(const char *v)
@@ -348,7 +355,7 @@ static bool otaAuth(AsyncWebServerRequest *r)
 static void otaStatus(AsyncWebServerRequest *r)
 {
 	static const char *names[] = {"idle", "checking", "available", "uptodate", "downloading", "done", "error"};
-	char js[560];
+	char js[640];
 	snprintf(js, sizeof(js), "{\"state\":\"%s\",\"cur\":\"%s\",\"latest\":\"%s\",\"size\":%lu,\"pct\":%d,\"err\":\"%s\",\"net\":%d}",
 			 names[otaState], FORK_VERSION, otaLatest, (unsigned long)otaSize, otaPct, otaErr, WiFi.isConnected() ? 1 : 0);
 	AsyncWebServerResponse *resp = r->beginResponse(200, "application/json", js);

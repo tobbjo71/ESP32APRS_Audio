@@ -8492,8 +8492,9 @@ void wifiConnection()
     // Cleanup sensor objects before WiFi reconnection to prevent memory leaks
     cleanupSensors();
 
-    // Cleanup ADC resources to prevent memory leaks
-    AFSK_deinit();
+    // SM0TGY: the modem is not deinitialised here any more. Upstream freed the ADC and audio
+    // buffer on every Wi-Fi reconnect but never set them up again: the receiver stopped, and
+    // taskAPRSPoll could write to the freed buffer (crash seen 2026-10-20: AFSK_Poll, addr 0xd4).
 
     WiFi.disconnect(true, true, 500);
     WiFi.persistent(false);
@@ -9300,7 +9301,9 @@ void taskNetwork(void *pvParameters)
                     else
                     {
                         log_d("Ping WiFi Fail!\n");
-                        wifiConnection();
+                        // SM0TGY: reconnect the Wi-Fi client only; the own access point stays up
+                        // (a phone hotspot may not answer ping at all)
+                        WiFi.reconnect();
                         // WiFi.disconnect(true, true, 500);
                         // WiFi.persistent(false);
                         // WiFi.mode(WIFI_OFF); // Switch WiFi off
