@@ -72,7 +72,8 @@ AsyncWebServerResponse *beginBufferResponse(AsyncWebServerRequest *request, char
 		strlcpy(diagMaxPageUrl, request->url().c_str(), sizeof(diagMaxPageUrl));
 	}
 	size_t capb = heap_caps_get_allocated_size(buf);
-	if (capb > 0)
+	// SM0TGY: JSON answers are built in exact-size copies; their fill says nothing about page buffers
+	if (capb > 0 && !request->url().endsWith(".json"))
 	{
 		unsigned fill = (unsigned)((len + 1) * 100 / capb);
 		if (fill > diagMaxFill)
