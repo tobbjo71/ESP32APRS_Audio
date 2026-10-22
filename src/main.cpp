@@ -4321,7 +4321,7 @@ void setup()
         xTaskCreatePinnedToCore(
             taskGPS,        /* Function to implement the task */
             "taskGPS",      /* Name of the task */
-            3072,           /* Stack size in words */
+            4096,           /* Stack size in bytes; SM0TGY 2.2: was 3072, min free 1100 B on 2.1 */
             NULL,           /* Task input parameter */
             4,              /* Priority of the task */
             &taskGPSHandle, /* Task handle. */
@@ -8678,6 +8678,8 @@ void onEvent(arduino_event_id_t event, arduino_event_info_t info)
     case ARDUINO_EVENT_WIFI_STA_DISCONNECTED:
         log_d("WiFi Disconnected");
         wifiDisCount++;
+        if (wifiDisCount == 1)
+            mitiWifiTimeout = millis() + 3000; // SM0TGY 2.2: first reconnect soon after a lost link
         // SM0TGY: nothing else here. This handler runs in the Arduino network event task.
         // Upstream called WiFi.begin() and, after 10 disconnects, wifiConnection() from here:
         // WiFi.mode(WIFI_OFF) + restart waits for events that only this task delivers, and it
@@ -8822,6 +8824,11 @@ void taskNetwork(void *pvParameters)
 
     // Listen for modem events
     Network.onEvent(onEvent);
+    // SM0TGY 2.2: no library auto-reconnect. With it on, every failed attempt (hotspot gone:
+    // NO_AP_FOUND) starts a new all-channel scan at once, the radio is almost never on the
+    // soft-AP channel and the own AP disappears for clients (seen 2026-10-22 on 2.1).
+    // taskNetwork reconnects at intervals instead (first try 3 s after the link is lost).
+    WiFi.setAutoReconnect(false);
 
     // WiFi.onEvent(Wifi_connected,SYSTEM_EVENT_STA_CONNECTED);
     // WiFi.onEvent(Get_IPAddress, SYSTEM_EVENT_STA_GOT_IP);

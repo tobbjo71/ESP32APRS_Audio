@@ -915,7 +915,7 @@ void handle_diag(AsyncWebServerRequest *request)
 	}
 	char row[256];
 	strcpy(html, "<html><head><meta name=\"viewport\" content=\"width=device-width\"></head><body style=\"font-family:sans-serif\">\n");
-	strlcat(html, "<p><a href=\"/\" style=\"display:inline-block;padding:10px 16px;background:#4C5A2E;color:#F7F3E8;border-radius:8px;text-decoration:none;font-weight:700\">&lsaquo; Back to the tracker</a></p>\n", cap); // SM0TGY: way back
+	strlcat(html, "<p><a href=\"/#system\" style=\"display:inline-block;padding:10px 16px;background:#4C5A2E;color:#F7F3E8;border-radius:8px;text-decoration:none;font-weight:700\">&lsaquo; System and status</a></p>\n", cap); // SM0TGY: way back
 	strlcat(html, "<h3>SM0TGY v" FORK_VERSION " &ndash; diagnostics</h3>\n<table border=\"1\" cellpadding=\"3\">\n", cap);
 	snprintf(row, sizeof(row), "<tr><td>Uptime</td><td>%lu s</td></tr>\n", (unsigned long)(millis() / 1000));
 	strlcat(html, row, cap);
@@ -981,7 +981,7 @@ void handle_diag(AsyncWebServerRequest *request)
 	diagTaskRow(html, cap, "taskNetwork", taskNetworkHandle, 7000);
 	diagTaskRow(html, cap, "taskAPRS", taskAPRSHandle, 4096);
 	diagTaskRow(html, cap, "taskAPRSPoll", taskAPRSPollHandle, 2560);
-	diagTaskRow(html, cap, "taskGPS", taskGPSHandle, 3072);
+	diagTaskRow(html, cap, "taskGPS", taskGPSHandle, 4096);
 	diagTaskRow(html, cap, "loopTask", xTaskGetHandle("loopTask"), 5120);
 	diagTaskRow(html, cap, "async_tcp", xTaskGetHandle("async_tcp"), CONFIG_ASYNC_TCP_STACK_SIZE);
 	strlcat(html, "</table>\n<p><small>Reload to update. Values are measured, not estimates.</small></p></body></html>\n", cap);
