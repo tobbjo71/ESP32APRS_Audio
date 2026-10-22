@@ -35,7 +35,7 @@
 #endif
 #include <ESPAsyncWebServer.h>
 
-void asyncWebStalledClient(); // SM0TGY: called when a stalled client is aborted
+void asyncWebStalledClient(); // SM0TGY: called when a stalled client is closed
 
 #include "AsyncWebSynchronization.h"
 
@@ -163,6 +163,7 @@ public:
 class AsyncWebSocketClient {
   private:
     AsyncClient *_client;
+    volatile bool _stalled = false; // SM0TGY: queue full, close in _onPoll
     AsyncWebSocket *_server;
     uint32_t _clientId;
     AwsClientStatus _status;

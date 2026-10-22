@@ -517,6 +517,12 @@ void AsyncWebSocketClient::_onAck(size_t len, uint32_t time){
 }
 
 void AsyncWebSocketClient::_onPoll(){
+  if(_stalled){ // SM0TGY: see _queueMessage
+    _stalled = false;
+    asyncWebStalledClient();
+    _client->close(true); // deletes this client via onDisconnect; touch nothing after
+    return;
+  }
   if(_client->canSend() && (!_controlQueue.isEmpty() || !_messageQueue.isEmpty())){
     _runQueue();
   } else if(_keepAlivePeriod > 0 && _controlQueue.isEmpty() && _messageQueue.isEmpty() && (millis() - _lastMessageTime) >= _keepAlivePeriod){
@@ -552,12 +558,10 @@ void AsyncWebSocketClient::_queueMessage(AsyncWebSocketMessage *dataMessage){
       ets_printf("ERROR: Too many messages queued\n");
       delete dataMessage;
       // SM0TGY: a client that stopped reading (sleeping phone) would hold the queue and the
-      // TCP send buffer in internal RAM indefinitely. Abort it; the page reconnects on wake.
-      // abort() defers the disconnect callback to the async_tcp task, so this object stays valid here.
-      if(_client && _client->connected()){
-        asyncWebStalledClient();
-        _client->abort();
-      }
+      // TCP send buffer in internal RAM indefinitely. Only mark it here: this runs in the
+      // sending task (e.g. taskGPS). The connection is closed in _onPoll, which runs in the
+      // async_tcp task like the library's own timeout close. (v1.39 aborted here and crashed.)
+      _stalled = true;
   } else {
       _messageQueue.add(dataMessage);
   }

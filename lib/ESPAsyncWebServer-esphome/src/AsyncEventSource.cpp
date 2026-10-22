@@ -207,11 +207,7 @@ bool AsyncEventSourceClient::_tryQueueMessage(AsyncEventSourceMessage *dataMessa
   if(_messageQueue.length() >= SSE_MAX_QUEUED_MESSAGES){
       delete dataMessage;
       ret = false;
-      // SM0TGY: stalled client, see AsyncWebSocketClient::_queueMessage
-      if(_client && _client->connected()){
-        asyncWebStalledClient();
-        _client->abort();
-      }
+      _stalled = true; // SM0TGY: closed in _onPoll, see AsyncWebSocketClient::_queueMessage
   } else {
       _messageQueue.add(dataMessage);
   }
@@ -225,6 +221,12 @@ void AsyncEventSourceClient::_onAck(size_t len, uint32_t time){
 }
 
 void AsyncEventSourceClient::_onPoll(){
+  if(_stalled){ // SM0TGY: stalled client, closed from the async_tcp task
+    _stalled = false;
+    asyncWebStalledClient();
+    _client->close(true);
+    return;
+  }
   if(!_messageQueue.isEmpty()){
     _runQueue();
   }
