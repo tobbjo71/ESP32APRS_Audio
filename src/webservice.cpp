@@ -839,6 +839,7 @@ void handle_symbol(AsyncWebServerRequest *request)
 }
 
 #include "esp_core_dump.h"
+#include "esp_app_desc.h"
 // ---- SM0TGY: memory and stability diagnostics (/diag) ----
 extern size_t diagMaxPage;
 extern char diagMaxPageUrl[32];
@@ -931,8 +932,14 @@ void handle_diag(AsyncWebServerRequest *request)
 		static esp_core_dump_summary_t cd;
 		if (esp_core_dump_image_check() == ESP_OK && esp_core_dump_get_summary(&cd) == ESP_OK)
 		{
-			snprintf(row, sizeof(row), "<tr><td>Last crash</td><td>task %s, PC 0x%08lx, cause %lu, addr 0x%08lx, app %.8s</td></tr>\n",
-					 cd.exc_task, (unsigned long)cd.exc_pc, (unsigned long)cd.ex_info.exc_cause, (unsigned long)cd.ex_info.exc_vaddr, (const char *)cd.app_elf_sha256);
+			// The core dump survives reflashing; compare its ELF hash with the running build
+			char runSha[9] = {0};
+			esp_app_get_elf_sha256(runSha, sizeof(runSha));
+			bool same = strncmp(runSha, (const char *)cd.app_elf_sha256, 8) == 0;
+			snprintf(row, sizeof(row), "<tr><td>Last crash</td><td>%stask %s, PC 0x%08lx, cause %lu, addr 0x%08lx, app %.8s (%s)</td></tr>\n",
+					 same ? "<b>THIS BUILD:</b> " : "",
+					 cd.exc_task, (unsigned long)cd.exc_pc, (unsigned long)cd.ex_info.exc_cause, (unsigned long)cd.ex_info.exc_vaddr, (const char *)cd.app_elf_sha256,
+					 same ? "this firmware" : "older firmware, not this build");
 			strlcat(html, row, cap);
 			strlcat(html, "<tr><td>Backtrace</td><td style=\"font-family:monospace\">", cap);
 			for (uint32_t i = 0; i < cd.exc_bt_info.depth && i < 16; i++)
