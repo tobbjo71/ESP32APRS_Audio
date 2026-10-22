@@ -906,7 +906,7 @@ void handle_diag(AsyncWebServerRequest *request)
 {
 	if (!request->authenticate(config.http_username, config.http_password))
 		return request->requestAuthentication();
-	const size_t cap = 6144;
+	const size_t cap = 10240; // SM0TGY 2.3: room for the all-tasks table
 	char *html = allocateStringMemory(cap);
 	if (!html)
 	{
@@ -984,7 +984,35 @@ void handle_diag(AsyncWebServerRequest *request)
 	diagTaskRow(html, cap, "taskGPS", taskGPSHandle, 4096);
 	diagTaskRow(html, cap, "loopTask", xTaskGetHandle("loopTask"), 5120);
 	diagTaskRow(html, cap, "async_tcp", xTaskGetHandle("async_tcp"), CONFIG_ASYNC_TCP_STACK_SIZE);
-	strlcat(html, "</table>\n<p><small>Reload to update. Values are measured, not estimates.</small></p></body></html>\n", cap);
+	strlcat(html, "</table>\n", cap);
+	// SM0TGY 2.3: every FreeRTOS task (ESP-IDF, Wi-Fi, Bluetooth included) with its unused stack,
+	// to see where internal RAM can still be saved. Stacks are internal RAM.
+	{
+		UBaseType_t n = uxTaskGetNumberOfTasks();
+		TaskStatus_t *ts = (TaskStatus_t *)malloc((n + 4) * sizeof(TaskStatus_t));
+		if (ts)
+		{
+			n = uxTaskGetSystemState(ts, n + 4, NULL);
+			strlcat(html, "<h4>All tasks (never used stack, bytes)</h4>\n<table border=\"1\" cellpadding=\"3\"><tr><th>Task</th><th>Prio</th><th>Core</th><th>Min free</th></tr>\n", cap);
+			for (UBaseType_t i = 0; i < n; i++)
+			{
+				char row[120];
+				int core = (int)xTaskGetCoreID(ts[i].xHandle);
+				snprintf(row, sizeof(row), "<tr><td>%s</td><td>%u</td><td>%s</td><td>%u</td></tr>\n", ts[i].pcTaskName, (unsigned)ts[i].uxCurrentPriority,
+						 core == tskNO_AFFINITY ? "any" : (core == 0 ? "0" : "1"), (unsigned)ts[i].usStackHighWaterMark);
+				strlcat(html, row, cap);
+			}
+			strlcat(html, "</table>\n", cap);
+			free(ts);
+		}
+		multi_heap_info_t mi;
+		heap_caps_get_info(&mi, MALLOC_CAP_INTERNAL);
+		char row[200];
+		snprintf(row, sizeof(row), "<p>Internal heap: %u free blocks, %u allocated blocks, largest free %u B</p>\n",
+				 (unsigned)mi.free_blocks, (unsigned)mi.allocated_blocks, (unsigned)mi.largest_free_block);
+		strlcat(html, row, cap);
+	}
+	strlcat(html, "<p><small>Reload to update. Values are measured, not estimates.</small></p></body></html>\n", cap);
 	AsyncWebServerResponse *response = beginBufferResponse(request, html);
 	response->addHeader("Cache-Control", "no-cache");
 	request->send(response);
