@@ -130,8 +130,8 @@ document.getElementById('pl').innerHTML=h||'<p class="muted">No packets in the l
 document.querySelectorAll('#pf button').forEach(function(b){b.onclick=function(){F=b.dataset.f;document.querySelectorAll('#pf button').forEach(function(x){x.classList.toggle('on',x==b)});draw()}});
 function hm(ts){var t=new Date(Number(ts)*1000);return t.getFullYear()<2020?'--:--':('0'+t.getHours()).slice(-2)+':'+('0'+t.getMinutes()).slice(-2)+':'+('0'+t.getSeconds()).slice(-2)}
 function dbv(mv){var d=20*Math.log10(parseFloat(mv)/1000);return isFinite(d)?d:null}
-var ws=null;fetch('/pkt.json').then(function(r){return r.json()}).then(function(a){a.forEach(function(e){L.push({d:e.d,t:hm(e.ts),db:e.d=='RX'?dbv(e.mv):null,r:e.r})});for(var i=0;i<L.length;i++)if(L[i].db!==null){lv(L[i].db);break}draw();live()}).catch(function(){draw();live()});
-function live(){if(stopped)return;ws=new WebSocket('ws://'+location.hostname+':81/ws');
+var ws=null;function boot(){L.length=0;fetch('/pkt.json').then(function(r){return r.json()}).then(function(a){a.forEach(function(e){L.push({d:e.d,t:hm(e.ts),db:e.d=='RX'?dbv(e.mv):null,r:e.r})});for(var i=0;i<L.length;i++)if(L[i].db!==null){lv(L[i].db);break}draw();live()}).catch(function(){draw();live()})}boot();
+function live(){if(stopped)return;ws=new WebSocket('ws://'+location.hostname+':81/ws');ws.onclose=function(){if(!stopped)setTimeout(boot,3000)};
 ws.onmessage=function(e){var j;try{j=JSON.parse(e.data)}catch(x){return}if(parseInt(j.Active)!=1)return;var d=j.Dir=='TX'?'TX':'RX',db=null;
 if(d=='RX'){db=20*Math.log10(parseFloat(j.mVrms)/1000);if(!isFinite(db))db=null;else lv(db)}
 var raw='';try{raw=atob(j.RAW)}catch(x){}var t=new Date(Number(j.timeStamp)*1000),ts=t.getFullYear()<2020?'--:--':('0'+t.getHours()).slice(-2)+':'+('0'+t.getMinutes()).slice(-2)+':'+('0'+t.getSeconds()).slice(-2);

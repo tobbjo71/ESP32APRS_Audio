@@ -21,6 +21,9 @@
 #include "Arduino.h"
 #include "AsyncWebSocket.h"
 
+// SM0TGY: hook for the application's diagnostics; default does nothing
+void __attribute__((weak)) asyncWebStalledClient() {}
+
 #include <libb64/cencode.h>
 
 #ifndef ESP8266
@@ -548,6 +551,13 @@ void AsyncWebSocketClient::_queueMessage(AsyncWebSocketMessage *dataMessage){
   if(_messageQueue.length() >= WS_MAX_QUEUED_MESSAGES){
       ets_printf("ERROR: Too many messages queued\n");
       delete dataMessage;
+      // SM0TGY: a client that stopped reading (sleeping phone) would hold the queue and the
+      // TCP send buffer in internal RAM indefinitely. Abort it; the page reconnects on wake.
+      // abort() defers the disconnect callback to the async_tcp task, so this object stays valid here.
+      if(_client && _client->connected()){
+        asyncWebStalledClient();
+        _client->abort();
+      }
   } else {
       _messageQueue.add(dataMessage);
   }

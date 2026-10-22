@@ -5560,8 +5560,15 @@ void msgBox(String msg)
 #endif
 
 uint8_t heapCount = 0;
+void diagHeapTick(); // SM0TGY: webservice.cpp
 void loop()
 {
+    static unsigned long heapTickT = 0;
+    if (millis() - heapTickT >= 1000)
+    {
+        heapTickT = millis();
+        diagHeapTick();
+    }
     if (millis() > timeTask)
     {
         timeTask = millis() + 10000;

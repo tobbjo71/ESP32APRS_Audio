@@ -35,6 +35,8 @@
 #endif
 #include <ESPAsyncWebServer.h>
 
+void asyncWebStalledClient(); // SM0TGY: called when a stalled client is aborted
+
 #include "AsyncWebSynchronization.h"
 
 #ifdef ESP8266

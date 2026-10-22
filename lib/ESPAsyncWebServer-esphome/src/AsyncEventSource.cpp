@@ -19,6 +19,7 @@
 */
 #include "Arduino.h"
 #include "AsyncEventSource.h"
+void asyncWebStalledClient(); // SM0TGY: defined weak in AsyncWebSocket.cpp
 
 static String generateEventMessage(const char *message, const char *event, uint32_t id, uint32_t reconnect){
   String ev = "";
@@ -206,6 +207,11 @@ bool AsyncEventSourceClient::_tryQueueMessage(AsyncEventSourceMessage *dataMessa
   if(_messageQueue.length() >= SSE_MAX_QUEUED_MESSAGES){
       delete dataMessage;
       ret = false;
+      // SM0TGY: stalled client, see AsyncWebSocketClient::_queueMessage
+      if(_client && _client->connected()){
+        asyncWebStalledClient();
+        _client->abort();
+      }
   } else {
       _messageQueue.add(dataMessage);
   }

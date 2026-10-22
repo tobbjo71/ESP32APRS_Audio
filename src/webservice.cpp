@@ -63,6 +63,28 @@ char diagMaxPageUrl[32] = "";
 unsigned diagMaxFill = 0;       // highest page/buffer fill in percent
 char diagMaxFillUrl[32] = "";
 
+// SM0TGY: when the internal heap reached its lowest point, and what was connected then.
+// Sampled once per second from loop(); ESP-IDF only keeps the value, not the time.
+static uint32_t diagLowHeap = UINT32_MAX;
+static unsigned long diagLowHeapUp = 0;
+static char diagLowHeapCtx[112] = "";
+static uint32_t diagStalledDropped = 0;
+extern AsyncWebSocket ws, ws_gnss;
+extern AsyncEventSource lastheard_events, message_events;
+void diagHeapTick()
+{
+	uint32_t m = heap_caps_get_minimum_free_size(MALLOC_CAP_INTERNAL);
+	if (m >= diagLowHeap)
+		return;
+	diagLowHeap = m;
+	diagLowHeapUp = millis() / 1000;
+	snprintf(diagLowHeapCtx, sizeof(diagLowHeapCtx), "AP clients %d, STA %s, ws %u, ws_gnss %u, sse %u/%u",
+			 WiFi.softAPgetStationNum(), WiFi.isConnected() ? "on" : "off",
+			 (unsigned)ws.count(), (unsigned)ws_gnss.count(), (unsigned)lastheard_events.count(), (unsigned)message_events.count());
+}
+// Called by the web server library when a client stopped reading and its queue is full
+void asyncWebStalledClient() { diagStalledDropped++; }
+
 AsyncWebServerResponse *beginBufferResponse(AsyncWebServerRequest *request, char *buf)
 {
 	size_t len = strlen(buf);
@@ -901,6 +923,9 @@ void handle_diag(AsyncWebServerRequest *request)
 	strlcat(html, row, cap);
 	snprintf(row, sizeof(row), "<tr><td>Heap free now</td><td>%u bytes</td></tr>\n<tr><td>Heap free, lowest since boot</td><td>%u bytes</td></tr>\n",
 			 (unsigned)ESP.getFreeHeap(), (unsigned)ESP.getMinFreeHeap());
+	strlcat(html, row, cap);
+	snprintf(row, sizeof(row), "<tr><td>Lowest heap seen at</td><td>uptime %lu s, %lu h %lu min ago (%s)</td></tr>\n<tr><td>Stalled web clients dropped</td><td>%lu</td></tr>\n",
+			 diagLowHeapUp, (millis() / 1000 - diagLowHeapUp) / 3600, ((millis() / 1000 - diagLowHeapUp) / 60) % 60, diagLowHeapCtx, (unsigned long)diagStalledDropped);
 	strlcat(html, row, cap);
 	snprintf(row, sizeof(row), "<tr><td>Largest free block</td><td>%u bytes</td></tr>\n<tr><td>Heap total</td><td>%u bytes</td></tr>\n",
 			 (unsigned)heap_caps_get_largest_free_block(MALLOC_CAP_INTERNAL | MALLOC_CAP_8BIT), (unsigned)ESP.getHeapSize());
@@ -12108,6 +12133,7 @@ void handle_gnss(AsyncWebServerRequest *request)
 	strcat(webString, "textArea.value+=atob(raw)+\"\\n\";\n");
 	strcat(webString, "textArea.scrollTop = textArea.scrollHeight;\n");
 	strcat(webString, "}\n");
+	strcat(webString, "ws.onclose=function(){if(document.getElementById(\"raw_txt\")&&window.gnssWs===ws)setTimeout(gnss,3000)};\n"); // SM0TGY: reconnect after a dropped socket
 	strcat(webString, "};\n</script>\n");
 	strcat(webString, "</head><body>\n");
 
