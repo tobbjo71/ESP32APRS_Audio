@@ -163,7 +163,7 @@ public:
 class AsyncWebSocketClient {
   private:
     AsyncClient *_client;
-    volatile bool _stalled = false; // SM0TGY: queue full, close in _onPoll
+    volatile uint32_t _fullSince = 0; // SM0TGY: millis() when the queue became full, 0 = not full
     AsyncWebSocket *_server;
     uint32_t _clientId;
     AwsClientStatus _status;

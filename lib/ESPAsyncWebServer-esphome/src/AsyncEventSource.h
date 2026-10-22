@@ -80,7 +80,7 @@ class AsyncEventSourceMessage {
 class AsyncEventSourceClient {
   private:
     AsyncClient *_client;
-    volatile bool _stalled = false; // SM0TGY: queue full, close in _onPoll
+    volatile uint32_t _fullSince = 0; // SM0TGY: millis() when the queue became full, 0 = not full
     AsyncEventSource *_server;
     uint32_t _lastId;
 #if defined(ESP32)
