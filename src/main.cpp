@@ -8678,51 +8678,12 @@ void onEvent(arduino_event_id_t event, arduino_event_info_t info)
     case ARDUINO_EVENT_WIFI_STA_DISCONNECTED:
         log_d("WiFi Disconnected");
         wifiDisCount++;
-
-        // Try immediate reconnect to current AP (don't wait for 30 disconnects)
-        if(millis() > lastReconnectAttempt + 5000) { // 5 seconds between attempts
-            lastReconnectAttempt = millis();
-
-            if(currentAPIndex >= 0 && config.wifi_sta[currentAPIndex].enable) {
-                log_d("Immediate reconnect attempt to AP[%d]: %s",
-                      currentAPIndex, config.wifi_sta[currentAPIndex].wifi_ssid);
-                WiFi.begin(
-                    config.wifi_sta[currentAPIndex].wifi_ssid,
-                    config.wifi_sta[currentAPIndex].wifi_pass
-                );
-            }
-
-            // Full reconnect only after multiple failed attempts (reduced from 30 to 10)
-            if (wifiDisconnecting == false && wifiDisCount > 10)
-            {
-                wifiDisCount = 0;
-                wifiDisconnecting = true;
-                pingTimeout = millis() + 10000;
-                log_d("Multiple disconnects - performing full WiFi reconnection");
-                wifiConnection();
-#ifdef MQTT
-            if (config.en_mqtt)
-            {
-                if (!clientMQTT.connected())
-                {
-                    clientMQTT.disconnect();
-                    clientMQTT.setServer(config.mqtt_host, config.mqtt_port);
-                    clientMQTT.setCallback(mqtt_callback);
-                }
-                mqtt_reconnect();
-            }
-#endif
-#ifdef PPPOS
-            if (config.vpn)
-            {
-                // if(PPP.connected()){
-                vpnConnected = false;
-                vpnTimeout = millis() + 1000;
-                //}
-            }
-#endif
-            }
-        }
+        // SM0TGY: nothing else here. This handler runs in the Arduino network event task.
+        // Upstream called WiFi.begin() and, after 10 disconnects, wifiConnection() from here:
+        // WiFi.mode(WIFI_OFF) + restart waits for events that only this task delivers, and it
+        // deinitialises the driver, so the soft-AP (created only at boot) never came back.
+        // Seen 2026-10-22 (v1.42): phone hotspot gone -> both hotspot link and own AP lost,
+        // BLE still working. Reconnection is done by taskNetwork, STA only, AP untouched.
         break;
     default:
         break;
@@ -9016,6 +8977,24 @@ void taskNetwork(void *pvParameters)
             if (config.wifi_mode & WIFI_STA_FIX)
                 wifiMulti.run(8000); // one attempt now, even with clients on the own AP
             log_d("WiFi client list reloaded");
+        }
+        // SM0TGY: STA reconnect, also while someone uses the own AP (upstream skipped it then
+        // and relied on reconnects from the event handler, see ARDUINO_EVENT_WIFI_STA_DISCONNECTED).
+        // Only the station is touched; the soft-AP keeps running.
+        if ((config.wifi_mode & WIFI_STA_FIX) && !WiFi.isConnected() && millis() > mitiWifiTimeout)
+        {
+            bool apInUse = WiFi.softAPgetStationNum() > 0;
+            mitiWifiTimeout = millis() + (apInUse ? 60000 : 30000);
+            if (currentAPIndex >= 0 && config.wifi_sta[currentAPIndex].enable)
+            {
+                log_d("Reconnecting to current AP: %s", config.wifi_sta[currentAPIndex].wifi_ssid);
+                WiFi.begin(config.wifi_sta[currentAPIndex].wifi_ssid, config.wifi_sta[currentAPIndex].wifi_pass);
+            }
+            else
+            {
+                log_d("Using wifiMulti to find available AP");
+                wifiMulti.run(apInUse ? 3000 : 8000);
+            }
         }
         if (config.wifi_mode & WIFI_AP_FIX)
         {
