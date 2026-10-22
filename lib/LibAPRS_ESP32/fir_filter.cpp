@@ -12,6 +12,7 @@
 #include <esp_log.h>
 
 #include "fir_filter.h"
+#include "esp_heap_caps.h" // SM0TGY 2.x
 
 #define TAG "filter"
 
@@ -107,9 +108,9 @@ int16_t *filter_coeff(filter_param_t const *f)
     int16_t *an;
 
 #ifdef __XTENSA__
-    an = (int16_t *)calloc(size * 3 + 1, sizeof(int16_t));
+    an = (int16_t *)heap_caps_calloc(size * 3 + 1, sizeof(int16_t), MALLOC_CAP_INTERNAL | MALLOC_CAP_8BIT); // SM0TGY 2.x: internal RAM
 #else
-    an = (int16_t *)calloc(size + 1, sizeof(int16_t));
+    an = (int16_t *)heap_caps_calloc(size + 1, sizeof(int16_t), MALLOC_CAP_INTERNAL | MALLOC_CAP_8BIT); // SM0TGY 2.x: internal RAM
 #endif
 
     if (an == NULL) {
@@ -146,7 +147,7 @@ void filter_init(filter_t *fp, int16_t an[], int size)
     fp->an = an;
     fp->size = size;
 
-    p = (int16_t *)calloc((size + 3) & ~3, sizeof(int16_t));
+    p = (int16_t *)heap_caps_calloc((size + 3) & ~3, sizeof(int16_t), MALLOC_CAP_INTERNAL | MALLOC_CAP_8BIT); // SM0TGY 2.x: internal RAM
     if (p == NULL) {
 	ESP_LOGE(TAG, "calloc");
 	exit(1);

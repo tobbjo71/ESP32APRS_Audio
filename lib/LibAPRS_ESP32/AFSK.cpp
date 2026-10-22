@@ -27,6 +27,7 @@
 #include "driver/sigmadelta.h"
 
 #include "esp_dsp.h"
+#include "esp_heap_caps.h" // SM0TGY 2.x
 #include <dsps_fir.h>
 #ifdef CONFIG_IDF_TARGET_ESP32C3
 #include <esp32c3/rom/crc.h>
@@ -960,7 +961,8 @@ void afskSetModem(uint8_t val, bool bpf, uint16_t timeSlot, uint16_t preamble, u
     free(audio_buffer);
     audio_buffer = NULL;
   }
-  audio_buffer = (float *)calloc(BLOCK_SIZE, sizeof(float));
+  // SM0TGY 2.x: modem working memory stays in internal RAM (malloc above 1 kB goes to PSRAM)
+  audio_buffer = (float *)heap_caps_calloc(BLOCK_SIZE, sizeof(float), MALLOC_CAP_INTERNAL | MALLOC_CAP_8BIT);
   if (audio_buffer == NULL)
   {
     log_d("Error allocating memory for audio buffer");
