@@ -16,7 +16,9 @@
 #include <NetworkClientSecure.h>
 #include <Update.h>
 
-#if defined(BT_BLE)
+#if defined(BT_BLE) && defined(FORK_V2)
+#define FORK_OTA_VARIANT "ble_v2" // SM0TGY: 2.x track (custom ESP-IDF config) has its own manifest
+#elif defined(BT_BLE)
 #define FORK_OTA_VARIANT "ble"
 #elif defined(BLUETOOTH)
 #define FORK_OTA_VARIANT "bt"
