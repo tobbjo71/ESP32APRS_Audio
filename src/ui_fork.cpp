@@ -169,7 +169,7 @@ extern const char UI_SYSTILES[] PROGMEM = R"HTML(<div class="tiles" id="sysT"></
 <script>(function(){function T(k,v,s){return '<div class="tile"><small>'+k+'</small><b>'+v+'</b><span>'+s+'</span></div>'}
 window.onStatus=function(s){document.getElementById('sysT').innerHTML=
 T('Uptime',fup(s.up),'')+T('Free memory',Math.round(s.heap/1024)+' kB','lowest '+Math.round(s.hmin/1024)+' kB \u00b7 PSRAM '+(s.ps/1048576).toFixed(1)+' MB')+
-T('Wi-Fi',s.wifi.sta?'Connected':'Own AP',s.wifi.cl+' client'+(s.wifi.cl==1?'':'s')+(s.wifi.sta?' \u00b7 '+s.wifi.ssid:''))+
+T('Wi-Fi',s.wifi.sta?'Connected':'Own AP',(s.wifi.sta?s.wifi.ssid+'<br>IP '+s.wifi.ip+'<br>':'')+s.wifi.cl+' client'+(s.wifi.cl==1?'':'s')+' on own AP (192.168.4.1)')+
 T('Bluetooth',s.bt==2?'App connected':(s.bt==1?'Waiting':'Off'),'')+
 T('GPS',s.gps.fix?'Fix':'No fix',s.gps.sat+' sat \u00b7 HDOP '+s.gps.hdop)+T('Firmware','v'+s.ver,'RX '+s.rx+' \u00b7 TX '+s.tx)};if(ST)window.onStatus(ST)})();</script>
 )HTML";
@@ -245,12 +245,12 @@ static void handle_status_json(AsyncWebServerRequest *request)
 	snprintf(js, sizeof(js),
 			 "{\"call\":\"%s\",\"host\":\"%s\",\"ver\":\"%s\",\"time\":\"%s\",\"up\":%lu,"
 			 "\"gps\":{\"fix\":%d,\"sat\":%lu,\"hdop\":%.1f},\"bt\":%d,"
-			 "\"wifi\":{\"cl\":%d,\"sta\":%d,\"ssid\":\"%s\"},"
+			 "\"wifi\":{\"cl\":%d,\"sta\":%d,\"ssid\":\"%s\",\"ip\":\"%s\"},"
 			 "\"heap\":%lu,\"hmin\":%lu,\"ps\":%lu,\"ltx\":%ld,\"rx\":%lu,\"tx\":%lu,"
 			 "\"trk\":%d,\"sb\":%d,\"digi\":%d,\"igate\":%d}",
 			 call, host, FORK_VERSION, tm, (unsigned long)(millis() / 1000 - upTimeStamp),
 			 fix ? 1 : 0, (unsigned long)gps.satellites.value(), gps.hdop.isValid() ? gps.hdop.hdop() : 0.0, btClientState(),
-			 (int)WiFi.softAPgetStationNum(), WiFi.isConnected() ? 1 : 0, ssid,
+			 (int)WiFi.softAPgetStationNum(), WiFi.isConnected() ? 1 : 0, ssid, WiFi.isConnected() ? WiFi.localIP().toString().c_str() : "",
 			 (unsigned long)ESP.getFreeHeap(), (unsigned long)ESP.getMinFreeHeap(), (unsigned long)ESP.getFreePsram(), ltx,
 			 (unsigned long)status.rxCount, (unsigned long)status.txCount,
 			 config.trk_en ? 1 : 0, config.trk_smartbeacon ? 1 : 0, config.digi_en ? 1 : 0, config.igate_en ? 1 : 0);
