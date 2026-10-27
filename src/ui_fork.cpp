@@ -67,7 +67,8 @@ var o=document.getElementById('symov');o.innerHTML=h+'</div></div>';o.hidden=fal
 function symClose(){document.getElementById('symov').hidden=true}
 function symSet(sel,c,t){symClose();if(sel===null)setValue(c,t);else setValue(sel,c,t)}
 if(window.EventSource){var es=new EventSource('/eventMsg');es.addEventListener('chatMsg',function(e){var m=document.getElementById('chatMsg');if(m)m.innerHTML=e.data},false)}
-st();setInterval(st,5000);go('heard');
+$.ajaxPrefilter(function(o){if(o.url!='/update'&&!o.timeout)o.timeout=20000});$(document).ajaxComplete(function(){$('#contentmain button:disabled').prop('disabled',false)});
+st();setInterval(st,5000);if(location.hash=='#system'){history.replaceState(null,'','/');setting('/system','System and status')}else go('heard');
 </script>
 </body></html>
 )HTML";
