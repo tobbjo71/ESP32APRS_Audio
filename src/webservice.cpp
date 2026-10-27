@@ -12,6 +12,7 @@
 #include "base64.hpp"
 #include "wireguard_vpn.h"
 #include <LibAPRSesp.h>
+#include "modem.h"
 #include <parse_aprs.h>
 #include "jquery_min_js.h"
 #include "aprs_symbols.h"
@@ -11586,6 +11587,57 @@ void handle_ws_gnss(char *nmea, size_t size)
 	
 }
 
+// SM0TGY: TX test for setting up a radio. Keys PTT for 10 s with a steady tone
+// (m=1: 1200 Hz, m=2: 2200 Hz, m=3: alternating 1200/2200 Hz like AFSK), long
+// enough to measure PTT and to set the TX level (RV1). m=0 stops a running test.
+extern int8_t _ptt_pin;
+extern bool _ptt_active;
+static volatile uint32_t txTestUntil = 0;
+static TaskHandle_t txTestTask = NULL;
+static void txTestRun(void *arg)
+{
+	ModemTxTestStart((enum ModemTxTestMode)(uintptr_t)arg);
+	while ((int32_t)(millis() - txTestUntil) < 0)
+		vTaskDelay(pdMS_TO_TICKS(50));
+	ModemTxTestStop();
+	txTestTask = NULL;
+	vTaskDelete(NULL);
+}
+
+void handle_txtest(AsyncWebServerRequest *request)
+{
+	if (!request->authenticate(config.http_username, config.http_password))
+		return request->requestAuthentication();
+	int m = request->hasArg("m") ? request->arg("m").toInt() : 0;
+	char msg[160];
+	if (m == 0)
+	{
+		txTestUntil = millis();
+		snprintf(msg, sizeof(msg), "TX test stopped");
+	}
+	else if (m < 1 || m > 3)
+	{
+		snprintf(msg, sizeof(msg), "Unknown test");
+	}
+	else if (txTestTask != NULL || getTransmit())
+	{
+		snprintf(msg, sizeof(msg), "Busy: transmitting already");
+	}
+	else
+	{
+		txTestUntil = millis() + 10000;
+		if (xTaskCreatePinnedToCore(txTestRun, "txTest", 3072, (void *)(uintptr_t)m, 2, &txTestTask, 1) != pdPASS)
+		{
+			txTestTask = NULL;
+			snprintf(msg, sizeof(msg), "Could not start the test");
+		}
+		else
+			snprintf(msg, sizeof(msg), "TX test 10 s: %s, PTT GPIO%d active %s",
+					 m == 1 ? "1200 Hz" : (m == 2 ? "2200 Hz" : "1200/2200 Hz"), _ptt_pin, _ptt_active ? "HIGH" : "LOW");
+	}
+	request->send(200, "text/plain", msg);
+}
+
 void handle_test(AsyncWebServerRequest *request)
 {
 	// if (request->hasArg("sendBeacon"))
@@ -11635,9 +11687,11 @@ void handle_test(AsyncWebServerRequest *request)
 	strcat(webString, "document.getElementById('vrms').innerHTML=v.toFixed(3);document.getElementById('dbv').innerHTML=d.toFixed(1);\n");
 	strcat(webString, "var b=document.getElementById('bar');b.style.width=Math.round((d+40)/40*300)+'px';b.style.background=(d>-10)?'#c02316':(d>-20?'#00c000':'#e0b000');\n");
 	strcat(webString, "var t=document.getElementById('raw_txt');t.value+=new Date(Number(j.timeStamp)*1000).toISOString()+' ['+v.toFixed(3)+' Vrms, '+d.toFixed(1)+' dBV]\\n'+atob(j.RAW)+'\\n';t.scrollTop=t.scrollHeight;};}\n");
+	strcat(webString, "function tt(m){document.getElementById('tts').textContent='...';fetch('/txtest?m='+m).then(function(r){return r.text()}).then(function(t){document.getElementById('tts').textContent=t}).catch(function(){document.getElementById('tts').textContent='No answer'})}\n");
 	strcat(webString, "</script>\n");
 	strcat(webString, "</head><body>\n<table>\n");
 	strcat(webString, "<tr><td><div style=\"margin:10px\"><b>RX audio level (last packet)</b><br />Vrms: <span id=\"vrms\">-</span> &nbsp; dBV: <span id=\"dbv\">-</span><div id=\"barbox\"><div id=\"bar\"></div></div><small>-40 dBV ... 0 dBV. Green -20..-10 dBV, red above -10 dBV.</small></div></td></tr>\n");
+	strcat(webString, "<tr><td><div style=\"margin:10px\"><b>TX test (10 s)</b><br /><button onclick=\"tt(1)\">1200 Hz</button> <button onclick=\"tt(2)\">2200 Hz</button> <button onclick=\"tt(3)\">1200/2200 Hz</button> <button onclick=\"tt(0)\">Stop</button><br /><span id=\"tts\"></span><br /><small>Keys the radio for 10 s with a steady tone: measure PTT, set the TX level with RV1. Use a dummy load or low power.</small></div></td></tr>\n");
 	strcat(webString, "<tr><td><div style=\"margin: 15px;\">Terminal<br /><textarea id=\"raw_txt\" name=\"raw_txt\" rows=\"50\" cols=\"80\" /></textarea></div></td></tr>\n");
 	strcat(webString, "</table>\n<script>vu();</script>\n");
 
@@ -12412,6 +12466,8 @@ void webService()
 					{ handle_system(request); });
 	async_server.on("/wireless", HTTP_GET | HTTP_POST, [](AsyncWebServerRequest *request)
 					{ handle_wireless(request); });
+	async_server.on("/txtest", HTTP_GET, [](AsyncWebServerRequest *request)
+					{ handle_txtest(request); });
 	async_server.on("/tnc2", HTTP_GET, [](AsyncWebServerRequest *request)
 					{ handle_test(request); });
 	async_server.on("/gnss", HTTP_GET, [](AsyncWebServerRequest *request)
