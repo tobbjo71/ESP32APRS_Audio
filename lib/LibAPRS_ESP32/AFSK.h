@@ -438,4 +438,21 @@ void setPtt(bool state);
 void IRAM_ATTR LED_Status2(uint8_t red, uint8_t green, uint8_t blue);
 
 
+
+// SM0TGY: RX audio recording (radio test page)
+#define RXCAP_SLOTS 3
+#define RXCAP_SEC 6
+typedef struct
+{
+  int16_t *buf;
+  uint32_t cap, n, rate, ms;
+  uint16_t frameLen;
+  bool ok;
+  bool unitMv;
+} RxCapSlot;
+extern RxCapSlot rxCap[RXCAP_SLOTS];
+extern volatile uint32_t rxCapCount;
+void rxCapTrigger(uint16_t frameLen, bool ok);
+void rxCapNow();
+int afskRawToMv(int raw);
 #endif

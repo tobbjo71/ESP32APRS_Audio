@@ -11699,6 +11699,77 @@ void handle_rxlevel(AsyncWebServerRequest *request)
 	request->send(200, "application/json", msg);
 }
 
+// SM0TGY: RX audio recordings (see rxCap in AFSK.cpp). /rxcap lists them (newest first),
+// /rxcap?now=1 records the last seconds now, /rxwav?i=N sends recording N as 16-bit WAV.
+void handle_rxcap(AsyncWebServerRequest *request)
+{
+	if (request->hasArg("now"))
+		rxCapNow();
+	char out[512];
+	uint32_t n = rxCapCount, now = millis();
+	strcpy(out, "[");
+	for (uint32_t k = 0; k < RXCAP_SLOTS && k < n; k++)
+	{
+		const RxCapSlot *c = &rxCap[(n - 1 - k) % RXCAP_SLOTS];
+		char row[128];
+		snprintf(row, sizeof(row), "%s{\"i\":%lu,\"ago\":%lu,\"len\":%u,\"ok\":%d,\"rate\":%lu,\"sec\":%lu}", k ? "," : "",
+				 (unsigned long)k, (unsigned long)((now - c->ms) / 1000), c->frameLen, c->ok ? 1 : 0, (unsigned long)c->rate,
+				 (unsigned long)(c->rate ? c->n / c->rate : 0));
+		strlcat(out, row, sizeof(out));
+	}
+	strlcat(out, "]", sizeof(out));
+	request->send(200, "application/json", out);
+}
+
+void handle_rxwav(AsyncWebServerRequest *request)
+{
+	uint32_t k = request->hasArg("i") ? request->arg("i").toInt() : 0;
+	uint32_t n = rxCapCount;
+	if (k >= RXCAP_SLOTS || k >= n)
+	{
+		request->send(404, "text/plain", "no recording");
+		return;
+	}
+	const RxCapSlot *c = &rxCap[(n - 1 - k) % RXCAP_SLOTS];
+	if (c->buf == NULL || c->n == 0)
+	{
+		request->send(404, "text/plain", "no recording");
+		return;
+	}
+	const uint32_t dataLen = c->n * 2, total = 44 + dataLen;
+	AsyncWebServerResponse *r = request->beginResponse("audio/wav", total, [c, dataLen](uint8_t *buf, size_t maxLen, size_t index) -> size_t
+	{
+		uint8_t hdr[44];
+		uint32_t rate = c->rate;
+		memcpy(hdr, "RIFF", 4); uint32_t v = 36 + dataLen; memcpy(hdr + 4, &v, 4);
+		memcpy(hdr + 8, "WAVEfmt ", 8); v = 16; memcpy(hdr + 16, &v, 4);
+		uint16_t w = 1; memcpy(hdr + 20, &w, 2); w = 1; memcpy(hdr + 22, &w, 2);
+		memcpy(hdr + 24, &rate, 4); v = rate * 2; memcpy(hdr + 28, &v, 4);
+		w = 2; memcpy(hdr + 32, &w, 2); w = 16; memcpy(hdr + 34, &w, 2);
+		memcpy(hdr + 36, "data", 4); memcpy(hdr + 40, &dataLen, 4);
+		size_t done = 0;
+		while (done < maxLen && index + done < 44 + (size_t)dataLen)
+		{
+			size_t pos = index + done;
+			if (pos < 44)
+				buf[done++] = hdr[pos];
+			else
+			{
+				size_t off = pos - 44;
+				const uint8_t *src = (const uint8_t *)c->buf;
+				size_t chunk = min(maxLen - done, (size_t)dataLen - off);
+				memcpy(buf + done, src + off, chunk);
+				done += chunk;
+			}
+		}
+		return done;
+	});
+	char name[64];
+	snprintf(name, sizeof(name), "attachment; filename=\"rx_%lus_%u_%s.wav\"", (unsigned long)(c->ms / 1000), c->frameLen, c->ok ? "ok" : "bad");
+	r->addHeader("Content-Disposition", name);
+	request->send(r);
+}
+
 // SM0TGY: the last frames the decoder finished (good or bad CRC), newest first
 void handle_rxlog(AsyncWebServerRequest *request)
 {
@@ -11734,23 +11805,27 @@ static const char UI_RADIOTEST[] PROGMEM = R"HTML(<h2 class="pg">Radio level and
 <div class="tile" style="margin-bottom:8px"><small>Last received packet</small><b class="mono" id="pk">&ndash;</b><span class="mono" id="pr" style="word-break:break-all"></span></div>
 <div class="gh">Decoder log &middot; last frames, newest first</div>
 <div class="tile" style="margin-bottom:8px;overflow-x:auto"><table class="mono" style="font-size:12px;margin:0"><thead><tr><th>s ago</th><th>demod</th><th>bytes</th><th>CRC</th><th>Vrms</th><th>peak/valley/level</th></tr></thead><tbody id="rlog"><tr><td colspan="6">&ndash;</td></tr></tbody></table></div>
+<div class="gh">Recordings &middot; the last 6 s of input when a frame ends</div>
+<div class="tile" style="margin-bottom:8px"><div id="rcap" class="mono" style="font-size:13px">&ndash;</div><p style="margin:8px 0 0"><button type="button" class="button" onclick="rnow()">Record now</button></p><span class="muted">A recording is made automatically 0.4 s after a decoded frame of 30 bytes or more (good or bad CRC), at most every 1.5 s; the last 3 are kept.</span></div>
 <div class="gh">TX test</div>
 <div class="seg"><button type="button" id="tb4" onclick="tt(4)">PTT</button><button type="button" id="tb1" onclick="tt(1)">1200 Hz</button><button type="button" id="tb2" onclick="tt(2)">2200 Hz</button><button type="button" id="tb3" onclick="tt(3)">1200/2200 Hz</button></div>
 <p><b id="tts">&ndash;</b></p>
 <p class="muted">A button stays on until it is pressed again, at most 180 s; leaving this page stops it. It keys the radio: measure PTT, set the TX level with RV1. Use a dummy load or low power.</p>
-<script>(function(){var stopped=false,TT=0,ws=null,t1=null,t2=null,t3=null;function E(i){return document.getElementById(i)}
+<script>(function(){var stopped=false,TT=0,ws=null,t1=null,t2=null,t3=null,t4=null;function E(i){return document.getElementById(i)}
 function ts(j){TT=j.on;E('tts').textContent=j.t;for(var i=1;i<5;i++){var b=E('tb'+i);b.style.background=TT==i?'var(--red)':'';b.style.color=TT==i?'#fff':'';b.style.borderColor=TT==i?'var(--red)':''}}
 window.tt=function(m){fetch('/txtest?m='+(TT?0:m)).then(function(r){return r.json()}).then(ts).catch(function(){E('tts').textContent='No answer'})};
 function lv(){if(stopped)return;fetch('/rxlevel').then(function(r){return r.json()}).then(function(j){var v=j.mv/1000,d=20*Math.log10(v);if(!isFinite(d)||d<-60)d=-60;
 var c=(j.lo>=0&&(j.lo<20||j.hi>930));E('lv').textContent=j.tx?'TX':(v.toFixed(3)+' Vrms · '+d.toFixed(1)+' dBV');
 E('la').textContent='Input '+(j.lo<0?'–':(j.lo+'…'+j.hi))+' mV'+(c?' · CLIP':'');if(j.sps!==undefined)E('ldx').textContent='Samples/s '+j.sps+' \u00b7 decoder '+(j.dcd?'on':'off')+' \u00b7 flags '+j.fl+' \u00b7 frames ok '+j.ok+' / bad CRC '+j.bad+(j.gap!==undefined?' \u00b7 sample timer longest gap '+j.gap+' \u00b5s (normal 104), late '+j.late+' \u00b7 CPU '+j.mhz+' MHz':'');var b=E('lbar');b.style.width=Math.round((d+60)/60*100)+'%';b.style.background=c||d>-10?'var(--red)':(d>-40?'var(--o5)':'var(--och)')}).catch(function(){}).then(function(){if(!stopped)t1=setTimeout(lv,300)})}
 function rl(){if(stopped)return;fetch('/rxlog').then(function(r){return r.json()}).then(function(a){var h='';a.forEach(function(e){h+='<tr><td>'+e.ago+'</td><td>'+e.m+'</td><td>'+e.len+'</td><td>'+(e.ok?'ok':'<b style="color:var(--red)">bad</b>')+'</td><td>'+(e.mv/1000).toFixed(3)+'</td><td>'+e.pk+' / '+e.va+' / '+e.lv+'</td></tr>'});E('rlog').innerHTML=h||'<tr><td colspan="6">No frames yet</td></tr>'}).catch(function(){}).then(function(){if(!stopped)t3=setTimeout(rl,2000)})}
+function rc(){if(stopped)return;fetch('/rxcap').then(function(r){return r.json()}).then(function(a){var h='';a.forEach(function(e){h+='<div><a href="/rxwav?i='+e.i+'" download>rx '+e.ago+' s ago \u00b7 '+(e.len?e.len+' bytes, CRC '+(e.ok?'ok':'bad'):'manual')+' \u00b7 '+e.rate+' Hz \u00b7 '+e.sec+' s</a></div>'});E('rcap').innerHTML=h||'No recordings yet'}).catch(function(){}).then(function(){if(!stopped)t4=setTimeout(rc,3000)})}
+window.rnow=function(){fetch('/rxcap?now=1').then(function(){setTimeout(function(){clearTimeout(t4);rc()},600)})};
 function tq(){if(stopped)return;fetch('/txtest').then(function(r){return r.json()}).then(ts).catch(function(){}).then(function(){if(!stopped)t2=setTimeout(tq,2000)})}
 function live(){if(stopped)return;ws=new WebSocket('ws://'+location.hostname+':81/ws');ws.onclose=function(){if(!stopped)setTimeout(live,3000)};
 ws.onmessage=function(e){var j;try{j=JSON.parse(e.data)}catch(x){return}if(parseInt(j.Active)!=1||j.Dir=='TX')return;var v=parseFloat(j.mVrms)/1000,d=20*Math.log10(v);
 E('pk').textContent=isFinite(d)?(v.toFixed(3)+' Vrms · '+d.toFixed(1)+' dBV'):'–';try{E('pr').textContent=atob(j.RAW)}catch(x){}}}
-window.pageStop=function(){stopped=true;clearTimeout(t1);clearTimeout(t2);clearTimeout(t3);try{if(ws)ws.close()}catch(e){}if(TT)fetch('/txtest?m=0')};
-lv();tq();rl();live()})();</script>
+window.pageStop=function(){stopped=true;clearTimeout(t1);clearTimeout(t2);clearTimeout(t3);clearTimeout(t4);try{if(ws)ws.close()}catch(e){}if(TT)fetch('/txtest?m=0')};
+lv();tq();rl();rc();live()})();</script>
 )HTML";
 
 void handle_test(AsyncWebServerRequest *request)
@@ -12577,6 +12652,10 @@ void webService()
 					{ handle_rxlevel(request); });
 	async_server.on("/rxlog", HTTP_GET, [](AsyncWebServerRequest *request)
 					{ handle_rxlog(request); });
+	async_server.on("/rxcap", HTTP_GET, [](AsyncWebServerRequest *request)
+					{ handle_rxcap(request); });
+	async_server.on("/rxwav", HTTP_GET, [](AsyncWebServerRequest *request)
+					{ handle_rxwav(request); });
 	async_server.on("/tnc2", HTTP_GET, [](AsyncWebServerRequest *request)
 					{ handle_test(request); });
 	async_server.on("/gnss", HTTP_GET, [](AsyncWebServerRequest *request)

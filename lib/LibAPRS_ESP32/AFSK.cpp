@@ -1560,6 +1560,110 @@ bool sqlActiveOld = false;
 // uint32_t ret_num = 0;
 // uint8_t resultADC[READ_LEN] = {0};
 
+// SM0TGY: RX audio recording for the radio test page. The input samples as the modem
+// sees them (mV with the timer ADC, raw counts with DMA) run through a ring of
+// RXCAP_SEC seconds in PSRAM. A decoded frame (good or bad CRC, see AX25.cpp) or the
+// "Record now" button freezes the ring 0.4 s later into one of RXCAP_SLOTS slots, which
+// the web server sends as a WAV file.
+static int16_t *rxRing = NULL;
+static uint32_t rxRingLen = 0, rxRingPos = 0;
+static uint32_t rxRingRate = 0;
+RxCapSlot rxCap[RXCAP_SLOTS];
+volatile uint32_t rxCapCount = 0;
+static volatile uint32_t rxCapFreezeAt = 0;
+static volatile uint16_t rxCapLen = 0;
+static volatile bool rxCapOk = false;
+static uint32_t rxCapLastFreeze = 0;
+
+void rxCapTrigger(uint16_t frameLen, bool ok)
+{
+  if (rxCapFreezeAt != 0 || (rxCapLastFreeze && millis() - rxCapLastFreeze < 1500))
+    return;
+  rxCapLen = frameLen;
+  rxCapOk = ok;
+  rxCapFreezeAt = millis() + 400;
+  if (rxCapFreezeAt == 0)
+    rxCapFreezeAt = 1;
+}
+
+static void rxCapFreeze()
+{
+  if (rxRing == NULL)
+    return;
+  RxCapSlot *c = &rxCap[rxCapCount % RXCAP_SLOTS];
+  if (c->buf == NULL)
+    c->buf = (int16_t *)heap_caps_malloc(rxRingLen * sizeof(int16_t), MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT);
+  else if (c->cap < rxRingLen)
+  {
+    heap_caps_free(c->buf);
+    c->buf = (int16_t *)heap_caps_malloc(rxRingLen * sizeof(int16_t), MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT);
+  }
+  if (c->buf == NULL)
+    return;
+  c->cap = rxRingLen;
+  uint32_t first = rxRingLen - rxRingPos;
+  memcpy(c->buf, rxRing + rxRingPos, first * sizeof(int16_t));
+  memcpy(c->buf + first, rxRing, rxRingPos * sizeof(int16_t));
+  c->n = rxRingLen;
+  c->rate = rxRingRate;
+  c->ms = millis();
+  c->frameLen = rxCapLen;
+  c->ok = rxCapOk;
+#if defined(ADC_SAMPLE)
+  c->unitMv = true;
+#else
+  c->unitMv = false;
+#endif
+  rxCapCount++;
+  rxCapLastFreeze = millis();
+}
+
+static inline void rxCapPush(int16_t v)
+{
+  if (rxRing != NULL)
+  {
+    rxRing[rxRingPos] = v;
+    if (++rxRingPos >= rxRingLen)
+      rxRingPos = 0;
+  }
+}
+
+// called once per processed block: (re)allocates the ring for the current sample rate
+// and freezes a pending recording
+static void rxCapService()
+{
+  uint32_t want = (uint32_t)SAMPLERATE * RXCAP_SEC;
+  if (rxRingLen != want)
+  {
+    if (rxRing)
+      heap_caps_free(rxRing);
+    rxRing = (int16_t *)heap_caps_calloc(want, sizeof(int16_t), MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT);
+    rxRingLen = rxRing ? want : 0;
+    rxRingPos = 0;
+    rxRingRate = SAMPLERATE;
+  }
+  if (rxCapFreezeAt && (int32_t)(millis() - rxCapFreezeAt) >= 0)
+  {
+    rxCapFreeze();
+    rxCapFreezeAt = 0;
+  }
+}
+
+void rxCapNow() { rxCapLen = 0; rxCapOk = false; rxCapLastFreeze = 0; rxCapFreezeAt = millis() + 1; }
+
+// SM0TGY: input sample to millivolts (the timer ADC already delivers mV)
+int afskRawToMv(int raw)
+{
+#if defined(ADC_SAMPLE)
+  return raw;
+#else
+  int mv = raw;
+  if (AdcCaliHandle != NULL)
+    adc_cali_raw_to_voltage(AdcCaliHandle, raw, &mv);
+  return mv;
+#endif
+}
+
 void AFSK_Poll(bool SA818, bool RFPower)
 {
   fifoSampleCount = fifo.count;  // Diagnostic snapshot
@@ -1752,6 +1856,7 @@ void AFSK_Poll(bool SA818, bool RFPower)
       while (RingBuffer_Size(&fifo) >= BLOCK_SIZE)
       {
         //digitalWrite(15, HIGH);
+        rxCapService(); // SM0TGY
 
         mVsum = 0;
         mVsumCount = 0;
@@ -1768,6 +1873,7 @@ void AFSK_Poll(bool SA818, bool RFPower)
           //   break;
 
 #endif
+          rxCapPush(adc); // SM0TGY: RX audio recording (radio test page)
           // SM0TGY: raw ADC extremes for the live level meter (clipping check); reset by the reader
           if (adc < rxAdcMin)
             rxAdcMin = adc;
