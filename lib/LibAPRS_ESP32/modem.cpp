@@ -650,7 +650,11 @@ void ModemTransmitStop(void)
 	AFSK_FlushFifo();        // Discard stale samples accumulated before/during TX
 	hw_afsk_dac_isr = false; // Re-enable ADC FIFO filling (s_conv_done_cb gate)
 	AFSK_TimerEnable(true);  // No-op on ESP32-S3, restarts ADC timer on ESP32
+#if FORK_AUDIO_DMA
+	afskTxPttOffAfterDrain = true; // SM0TGY: the DMA task releases PTT after the queued audio has played
+#else
 	pttOff = true;           // Deferred PTT off — taskAPRS handles within 10ms
+#endif
 	log_d("ModemTransmitStop");
 }
 

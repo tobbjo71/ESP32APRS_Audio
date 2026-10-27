@@ -14,7 +14,13 @@
 #ifdef CONFIG_IDF_TARGET_ESP32
 #include "hal/adc_hal.h"
 #include "hal/adc_hal_common.h"
-#define ADC_SAMPLE
+#if !FORK_AUDIO_DMA
+#define ADC_SAMPLE // timer-driven sampling (FORK_AUDIO_DMA = 0)
+#endif
+#endif
+#if FORK_AUDIO_DMA
+#include "driver/dac_continuous.h"
+#include "driver/dac_oneshot.h"
 #endif
 // #include "cppQueue.h"
 #include "fir_filter.h"
@@ -151,7 +157,11 @@ extern float baudRate;  // baudrate
 
 /****************** Ring Buffer gen from DeepSeek *********************/
 //#if defined(CONFIG_IDF_TARGET_ESP32S3)
+#if FORK_AUDIO_DMA
+#define BUFFER_SIZE 4608 // SM0TGY: 8 blocks = 160 ms at 28800/s
+#else
 #define BUFFER_SIZE 1500
+#endif
 // #else
 // #define BUFFER_SIZE 770
 // #endif
@@ -759,7 +769,11 @@ void IRAM_ATTR sample_adc_isr()
   }
 }
 #else
+#if defined(CONFIG_IDF_TARGET_ESP32)
+#define ADC_OUTPUT_TYPE ADC_DIGI_OUTPUT_FORMAT_TYPE1 // SM0TGY: the ESP32 delivers type 1 (see s_conv_done_cb)
+#else
 #define ADC_OUTPUT_TYPE ADC_DIGI_OUTPUT_FORMAT_TYPE2
+#endif
 #endif
 
 // Forward declerations
@@ -822,6 +836,127 @@ SemaphoreHandle_t xI2CSemaphore;
 
 #define DEFAULT_SEMAPHORE_TIMEOUT 10
 
+#if FORK_AUDIO_DMA
+// SM0TGY: DMA audio output. The built-in DAC (channel 2 = GPIO26, the pin the board
+// already uses for TX audio) is fed by I2S0 DMA from a task, so the sample clock no
+// longer depends on interrupt latency (v2.13 measured gaps up to 184 us in the 26 us
+// timer interrupt). On the ESP32 the continuous ADC also uses I2S0, so the ADC is
+// released for the length of a transmission and started again afterwards. Between
+// transmissions a one-shot DAC holds GPIO26 at mid level.
+void adc_continue_init(void);
+static TaskHandle_t afskTxTaskHandle = NULL;
+static dac_oneshot_handle_t afskDacIdle = NULL;
+volatile bool afskTxPttOffAfterDrain = false;
+volatile uint32_t afskTxDmaRuns = 0, afskTxDmaErr = 0;
+extern volatile bool pttOff;
+extern uint8_t MODEM_BAUDRATE_TIMER_HANDLER(void);
+#define AFSK_DMA_DESC 4
+#define AFSK_DMA_BUF 1024 // bytes per DMA buffer, one byte per sample
+
+static void afskDacIdleOn()
+{
+  if (afskDacIdle == NULL)
+  {
+    dac_oneshot_config_t oc = {.chan_id = DAC_CHAN_1};
+    if (dac_oneshot_new_channel(&oc, &afskDacIdle) != ESP_OK)
+      afskDacIdle = NULL;
+  }
+  if (afskDacIdle)
+    dac_oneshot_output_voltage(afskDacIdle, 128);
+}
+
+static void afskDacIdleOff()
+{
+  if (afskDacIdle)
+  {
+    dac_oneshot_del_channel(afskDacIdle);
+    afskDacIdle = NULL;
+  }
+}
+
+static void adcDmaStop()
+{
+  if (AdcHandle != NULL)
+  {
+    adc_continuous_stop(AdcHandle);
+    adc_continuous_deinit(AdcHandle);
+    AdcHandle = NULL;
+  }
+}
+
+static void afskDmaTxTask(void *arg)
+{
+  static uint8_t buf[512];
+  for (;;)
+  {
+    ulTaskNotifyTake(pdTRUE, portMAX_DELAY);
+    if (!hw_afsk_dac_isr)
+      continue;
+    adcDmaStop();
+    afskDacIdleOff();
+    dac_continuous_handle_t h = NULL;
+    dac_continuous_config_t cfg = {
+        .chan_mask = DAC_CHANNEL_MASK_CH1,
+        .desc_num = AFSK_DMA_DESC,
+        .buf_size = AFSK_DMA_BUF,
+        .freq_hz = CONFIG_AFSK_DAC_SAMPLERATE,
+        .offset = 0,
+        .clk_src = DAC_DIGI_CLK_SRC_DEFAULT,
+        .chan_mode = DAC_CHANNEL_MODE_SIMUL,
+    };
+    if (dac_continuous_new_channels(&cfg, &h) == ESP_OK && dac_continuous_enable(h) == ESP_OK)
+    {
+      afskTxDmaRuns++;
+      while (hw_afsk_dac_isr)
+      {
+        for (int i = 0; i < (int)sizeof(buf); i++)
+        {
+          int v = 128;
+          if (hw_afsk_dac_isr)
+            v = 128 + ((((int)MODEM_BAUDRATE_TIMER_HANDLER() - 127) * 12) >> 4); // same level as the sigma-delta output
+          buf[i] = (uint8_t)v;
+        }
+        dac_continuous_write(h, buf, sizeof(buf), NULL, -1);
+      }
+      // let the queued samples play out before PTT is released
+      memset(buf, 128, sizeof(buf));
+      dac_continuous_write(h, buf, sizeof(buf), NULL, -1);
+      vTaskDelay(pdMS_TO_TICKS((AFSK_DMA_DESC * AFSK_DMA_BUF * 1000UL) / CONFIG_AFSK_DAC_SAMPLERATE + 5));
+      dac_continuous_disable(h);
+      dac_continuous_del_channels(h);
+    }
+    else
+    {
+      afskTxDmaErr++;
+      log_e("DAC DMA start failed");
+      if (h)
+        dac_continuous_del_channels(h);
+    }
+    afskDacIdleOn();
+    AFSK_FlushFifo();
+    adc_continue_init();
+    if (afskTxPttOffAfterDrain)
+    {
+      afskTxPttOffAfterDrain = false;
+      pttOff = true; // taskAPRS releases PTT
+    }
+  }
+}
+
+void afskDmaTxInit()
+{
+  afskDacIdleOn();
+  if (afskTxTaskHandle == NULL)
+    xTaskCreatePinnedToCore(afskDmaTxTask, "afskTx", 3072, NULL, configMAX_PRIORITIES - 4, &afskTxTaskHandle, 1);
+}
+
+void DAC_TimerEnable(bool sts)
+{
+  if (sts && afskTxTaskHandle)
+    xTaskNotifyGive(afskTxTaskHandle);
+  dacEn = 0;
+}
+#else
 void DAC_TimerEnable(bool sts)
 {
   if (timer_dac == NULL)
@@ -838,6 +973,7 @@ void DAC_TimerEnable(bool sts)
   portEXIT_CRITICAL_ISR(&timerMux);
   dacEn = 0;
 }
+#endif // FORK_AUDIO_DMA
 
 bool getTransmit()
 {
@@ -1051,6 +1187,7 @@ static bool IRAM_ATTR s_conv_done_cb(adc_continuous_handle_t stAdcHandle, const 
     return true;
   portENTER_CRITICAL_ISR(&fifoMux); // same lock RingBuffer_Pop() uses
   fifo.lock = true;
+  adcIsrCount += edata->size / SOC_ADC_DIGI_RESULT_BYTES; // SM0TGY: samples/s on the radio test page
   for (uint32_t k = 0; k < edata->size; k += SOC_ADC_DIGI_RESULT_BYTES)
   {
     adc_digi_output_data_t *p = (adc_digi_output_data_t *)&edata->conv_frame_buffer[k];
@@ -1216,7 +1353,10 @@ void adc_continue_init(void)
       };
 
 #ifdef CONFIG_IDF_TARGET_ESP32
-      Err = adc_cali_create_scheme_line_fitting(&cali_config, &AdcCaliHandle);
+      if (AdcCaliHandle != NULL) // SM0TGY: re-init after each DMA transmission keeps the scheme
+        Err = ESP_OK;
+      else
+        Err = adc_cali_create_scheme_line_fitting(&cali_config, &AdcCaliHandle);
       log_d("Creating ADC_UNIT_%d line cali handle", 1);
 //
 #else
@@ -1352,6 +1492,9 @@ void AFSK_hw_init(void)
 // log_d("v_ref routed to 3.3V\n");
 #endif
 
+#if FORK_AUDIO_DMA
+  afskDmaTxInit();
+#else
   sigmadelta_init();
   log_d("Sigma Delta Initialized");
   // Create semaphore to inform us when the timer has fired
@@ -1365,6 +1508,7 @@ void AFSK_hw_init(void)
   // Repeat the alarm (third parameter) with unlimited count = 0 (fourth parameter).
   timerAlarm(timer_dac, (uint64_t)20000000 / CONFIG_AFSK_DAC_SAMPLERATE, true, 0);
   timerStop(timer_dac);
+#endif // FORK_AUDIO_DMA
 
   //   ESP_LOGI(TAG, "Create timer handle");
   //   gptimer_handle_t gptimer = NULL;

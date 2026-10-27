@@ -439,6 +439,13 @@ void IRAM_ATTR LED_Status2(uint8_t red, uint8_t green, uint8_t blue);
 
 
 
+// SM0TGY: FORK_AUDIO_DMA 1 = DAC and ADC through I2S0 DMA instead of timer interrupts
+#ifndef FORK_AUDIO_DMA
+#define FORK_AUDIO_DMA 1
+#endif
+void afskDmaTxInit();
+extern volatile bool afskTxPttOffAfterDrain;
+extern volatile uint32_t afskTxDmaRuns, afskTxDmaErr;
 // SM0TGY: RX audio recording (radio test page)
 #define RXCAP_SLOTS 3
 #define RXCAP_SEC 6

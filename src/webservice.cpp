@@ -11662,7 +11662,11 @@ void handle_txtest(AsyncWebServerRequest *request)
 		int left = txTestTask ? (int)((int32_t)(txTestUntil - millis()) / 1000) : 0;
 		if (txTestTask)
 		{
+#if FORK_AUDIO_DMA
+			snprintf(msg, sizeof(msg), "{\"on\":%d,\"t\":\"TX ON: %s, PTT GPIO%d active %s, pin reads %s, stops by itself in %d s. Tone through DAC DMA (starts %lu, failed %lu)\"}", txTestMode, txTestName(txTestMode), _ptt_pin, _ptt_active ? "HIGH" : "LOW", pttPinLevel(), left, (unsigned long)afskTxDmaRuns, (unsigned long)afskTxDmaErr);
+#else
 			snprintf(msg, sizeof(msg), "{\"on\":%d,\"t\":\"TX ON: %s, PTT GPIO%d active %s, pin reads %s, stops by itself in %d s. Tone timer: longest gap %lu us (normal 26), %lu gaps over 52 us since last view\"}", txTestMode, txTestName(txTestMode), _ptt_pin, _ptt_active ? "HIGH" : "LOW", pttPinLevel(), left, (unsigned long)(dacIsrMaxGap / isrCpuMhz), (unsigned long)dacIsrLate);
+#endif
 			dacIsrMaxGap = 0;
 			dacIsrLate = 0;
 		}
@@ -11687,11 +11691,22 @@ void handle_rxlevel(AsyncWebServerRequest *request)
 	int16_t lo = rxAdcMin, hi = rxAdcMax;
 	rxAdcMin = 32767;
 	rxAdcMax = -32768;
+	int clip = 0;
 	if (hi < lo)
 		lo = hi = -1;
+	else
+	{
+#if FORK_AUDIO_DMA
+		clip = (lo <= 8 || hi >= 4087) ? 1 : 0; // raw 12-bit counts from the DMA ADC
+#else
+		clip = (lo < 20 || hi > 930) ? 1 : 0;
+#endif
+		lo = afskRawToMv(lo);
+		hi = afskRawToMv(hi);
+	}
 	char msg[260];
-	snprintf(msg, sizeof(msg), "{\"mv\":%d,\"lo\":%d,\"hi\":%d,\"tx\":%d,\"sps\":%lu,\"dcd\":%d,\"fl\":%lu,\"ok\":%lu,\"bad\":%lu,\"gap\":%lu,\"late\":%lu,\"mhz\":%lu}",
-			 mVrms, lo, hi, getTransmit() ? 1 : 0, (unsigned long)sps, dcd_cnt > 3 ? 1 : 0,
+	snprintf(msg, sizeof(msg), "{\"mv\":%d,\"lo\":%d,\"hi\":%d,\"clip\":%d,\"tx\":%d,\"sps\":%lu,\"dcd\":%d,\"fl\":%lu,\"ok\":%lu,\"bad\":%lu,\"gap\":%lu,\"late\":%lu,\"mhz\":%lu}",
+			 mVrms, lo, hi, clip, getTransmit() ? 1 : 0, (unsigned long)sps, dcd_cnt > 3 ? 1 : 0,
 			 (unsigned long)ax25DiagFlags, (unsigned long)ax25DiagOk, (unsigned long)ax25DiagBad,
 			 (unsigned long)(adcIsrMaxGap / isrCpuMhz), (unsigned long)adcIsrLate, (unsigned long)isrCpuMhz);
 	adcIsrMaxGap = 0;
@@ -11815,7 +11830,7 @@ static const char UI_RADIOTEST[] PROGMEM = R"HTML(<h2 class="pg">Radio level and
 function ts(j){TT=j.on;E('tts').textContent=j.t;for(var i=1;i<5;i++){var b=E('tb'+i);b.style.background=TT==i?'var(--red)':'';b.style.color=TT==i?'#fff':'';b.style.borderColor=TT==i?'var(--red)':''}}
 window.tt=function(m){fetch('/txtest?m='+(TT?0:m)).then(function(r){return r.json()}).then(ts).catch(function(){E('tts').textContent='No answer'})};
 function lv(){if(stopped)return;fetch('/rxlevel').then(function(r){return r.json()}).then(function(j){var v=j.mv/1000,d=20*Math.log10(v);if(!isFinite(d)||d<-60)d=-60;
-var c=(j.lo>=0&&(j.lo<20||j.hi>930));E('lv').textContent=j.tx?'TX':(v.toFixed(3)+' Vrms · '+d.toFixed(1)+' dBV');
+var c=j.clip!==undefined?j.clip:(j.lo>=0&&(j.lo<20||j.hi>930));E('lv').textContent=j.tx?'TX':(v.toFixed(3)+' Vrms · '+d.toFixed(1)+' dBV');
 E('la').textContent='Input '+(j.lo<0?'–':(j.lo+'…'+j.hi))+' mV'+(c?' · CLIP':'');if(j.sps!==undefined)E('ldx').textContent='Samples/s '+j.sps+' \u00b7 decoder '+(j.dcd?'on':'off')+' \u00b7 flags '+j.fl+' \u00b7 frames ok '+j.ok+' / bad CRC '+j.bad+(j.gap!==undefined?' \u00b7 sample timer longest gap '+j.gap+' \u00b5s (normal 104), late '+j.late+' \u00b7 CPU '+j.mhz+' MHz':'');var b=E('lbar');b.style.width=Math.round((d+60)/60*100)+'%';b.style.background=c||d>-10?'var(--red)':(d>-40?'var(--o5)':'var(--och)')}).catch(function(){}).then(function(){if(!stopped)t1=setTimeout(lv,300)})}
 function rl(){if(stopped)return;fetch('/rxlog').then(function(r){return r.json()}).then(function(a){var h='';a.forEach(function(e){h+='<tr><td>'+e.ago+'</td><td>'+e.m+'</td><td>'+e.len+'</td><td>'+(e.ok?'ok':'<b style="color:var(--red)">bad</b>')+'</td><td>'+(e.mv/1000).toFixed(3)+'</td><td>'+e.pk+' / '+e.va+' / '+e.lv+'</td></tr>'});E('rlog').innerHTML=h||'<tr><td colspan="6">No frames yet</td></tr>'}).catch(function(){}).then(function(){if(!stopped)t3=setTimeout(rl,2000)})}
 function rc(){if(stopped)return;fetch('/rxcap').then(function(r){return r.json()}).then(function(a){var h='';a.forEach(function(e){h+='<div><a href="/rxwav?i='+e.i+'" download>rx '+e.ago+' s ago \u00b7 '+(e.len?e.len+' bytes, CRC '+(e.ok?'ok':'bad'):'manual')+' \u00b7 '+e.rate+' Hz \u00b7 '+e.sec+' s</a></div>'});E('rcap').innerHTML=h||'No recordings yet'}).catch(function(){}).then(function(){if(!stopped)t4=setTimeout(rc,3000)})}
