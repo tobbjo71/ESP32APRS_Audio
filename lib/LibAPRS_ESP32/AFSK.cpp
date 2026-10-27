@@ -3,6 +3,7 @@
 #include "AFSK.h"
 #include "esp_log.h"
 #include "driver/gpio.h"
+#include "esp_cpu.h"
 #include "esp_adc/adc_oneshot.h"
 #include "esp_adc/adc_cali.h"
 #include "esp_adc/adc_cali_scheme.h"
@@ -78,6 +79,25 @@ static const adc_unit_t unit = ADC_UNIT_1;
 void sample_dac_isr();
 volatile bool hw_afsk_dac_isr = false;
 volatile uint32_t adcIsrCount = 0;  // Diagnostic: counts ADC ISR firings
+// SM0TGY: ISR timing diagnostics (radio test page): longest gap between two calls in CPU
+// cycles and the number of gaps longer than two periods; reset by the reader.
+volatile uint32_t dacIsrMaxGap = 0, dacIsrLate = 0, adcIsrMaxGap = 0, adcIsrLate = 0;
+static uint32_t dacIsrLast = 0, adcIsrLast = 0;
+volatile uint32_t isrCpuMhz = 240; // set from getCpuFrequencyMhz() at init
+static inline void IRAM_ATTR isrGap(uint32_t *last, volatile uint32_t *maxGap, volatile uint32_t *late, uint32_t period)
+{
+  uint32_t now = esp_cpu_get_cycle_count();
+  if (*last)
+  {
+    uint32_t d = now - *last;
+    if (d > *maxGap)
+      *maxGap = d;
+    if (d > 2 * period)
+      (*late)++;
+  }
+  *last = now;
+}
+void dacIsrGapReset() { dacIsrLast = 0; }
 volatile int fifoSampleCount = 0;   // Diagnostic: snapshot of FIFO count
 
 bool holdADC = false;
@@ -718,6 +738,7 @@ static const char *TAG = "--(TAG ADC DMA)--";
 void IRAM_ATTR sample_adc_isr()
 {
   adcIsrCount++;
+  isrGap(&adcIsrLast, &adcIsrMaxGap, &adcIsrLate, isrCpuMhz * 1000000UL / 9600);
   if (!hw_afsk_dac_isr)
   {
     fifo.lock = true;
@@ -1334,6 +1355,7 @@ void AFSK_hw_init(void)
   // Create semaphore to inform us when the timer has fired
   //timerSemaphore = xSemaphoreCreateBinary();
   // Set timer frequency to 20Mhz
+  isrCpuMhz = getCpuFrequencyMhz(); // SM0TGY: for the ISR timing diagnostics
   timer_dac = timerBegin(20000000);
   // Attach onTimer function to our timer.
   timerAttachInterrupt(timer_dac, &sample_dac_isr); // Attaches the handler function to the timer
@@ -1506,8 +1528,11 @@ bool adcq_lock = false;
 
 uint16_t phaseAcc = 0;
 
+
 void IRAM_ATTR sample_dac_isr()
 {
+  if (hw_afsk_dac_isr)
+    isrGap(&dacIsrLast, &dacIsrMaxGap, &dacIsrLate, isrCpuMhz * 1000000UL / CONFIG_AFSK_DAC_SAMPLERATE);
   if (hw_afsk_dac_isr)
   {
     portENTER_CRITICAL_ISR(&timerMux); // ISR start
