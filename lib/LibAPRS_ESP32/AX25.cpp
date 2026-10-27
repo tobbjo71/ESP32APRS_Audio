@@ -141,6 +141,7 @@ struct RxState
 
 static struct RxState rxState[MODEM_MAX_DEMODULATOR_COUNT];
 
+volatile uint32_t ax25DiagFlags = 0, ax25DiagOk = 0, ax25DiagBad = 0; // SM0TGY: HDLC flags, frames with good / bad CRC (counted per demodulator)
 static uint16_t lastCrc = 0; //CRC of the last received frame. If not 0, a frame was successfully received
 static uint16_t rxMultiplexDelay = 0; //simple delay for decoder multiplexer to avoid receiving the same frame twice
 
@@ -664,12 +665,18 @@ void Ax25BitParse(uint8_t bit, uint8_t modem,uint16_t mV)
 
 		if(rx->rawData == 0x7E) //HDLC flag received
 		{
+			ax25DiagFlags++; // SM0TGY: decoder diagnostics on the radio test page
 			if(rx->rx == RX_STAGE_FRAME) //if we are in frame, this is the end of the frame
 			{
 				if(rx->frameIdx >= 17) //correct frame must be at least 17 bytes long (source+destination+control+CRC)
 				{
 					rx->crc ^= 0xFFFF;
-					if((rx->frame[rx->frameIdx - 2] == (rx->crc & 0xFF)) && (rx->frame[rx->frameIdx - 1] == ((rx->crc >> 8) & 0xFF))) //check CRC
+					bool crcOk = (rx->frame[rx->frameIdx - 2] == (rx->crc & 0xFF)) && (rx->frame[rx->frameIdx - 1] == ((rx->crc >> 8) & 0xFF));
+					if (crcOk)
+						ax25DiagOk++;
+					else
+						ax25DiagBad++;
+					if(crcOk) //check CRC
 					{
 						uint16_t i = 13;
                         //log_d("[%i]%s",rx->frameIdx,rx->frame);

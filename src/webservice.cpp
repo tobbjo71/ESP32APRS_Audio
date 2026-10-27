@@ -11636,16 +11636,25 @@ void handle_txtest(AsyncWebServerRequest *request)
 
 // SM0TGY: live RX level (the modem's RMS over each block, mV) and the input extremes in mV since
 // the last call, for setting RV2 against the receiver's noise with squelch open.
+extern volatile uint32_t adcIsrCount;
+extern uint8_t dcd_cnt;
+extern volatile uint32_t ax25DiagFlags, ax25DiagOk, ax25DiagBad;
 void handle_rxlevel(AsyncWebServerRequest *request)
 {
+	static uint32_t lastCnt = 0, lastMs = 0;
+	uint32_t now = millis(), cnt = adcIsrCount;
+	uint32_t sps = (lastMs && now > lastMs) ? (uint32_t)((uint64_t)(cnt - lastCnt) * 1000 / (now - lastMs)) : 0;
+	lastCnt = cnt;
+	lastMs = now;
 	int16_t lo = rxAdcMin, hi = rxAdcMax;
 	rxAdcMin = 32767;
 	rxAdcMax = -32768;
-	char msg[96];
 	if (hi < lo)
-		snprintf(msg, sizeof(msg), "{\"mv\":%d,\"lo\":-1,\"hi\":-1,\"tx\":%d}", mVrms, getTransmit() ? 1 : 0);
-	else
-		snprintf(msg, sizeof(msg), "{\"mv\":%d,\"lo\":%d,\"hi\":%d,\"tx\":%d}", mVrms, lo, hi, getTransmit() ? 1 : 0);
+		lo = hi = -1;
+	char msg[200];
+	snprintf(msg, sizeof(msg), "{\"mv\":%d,\"lo\":%d,\"hi\":%d,\"tx\":%d,\"sps\":%lu,\"dcd\":%d,\"fl\":%lu,\"ok\":%lu,\"bad\":%lu}",
+			 mVrms, lo, hi, getTransmit() ? 1 : 0, (unsigned long)sps, dcd_cnt > 3 ? 1 : 0,
+			 (unsigned long)ax25DiagFlags, (unsigned long)ax25DiagOk, (unsigned long)ax25DiagBad);
 	request->send(200, "application/json", msg);
 }
 
@@ -11654,8 +11663,8 @@ void handle_rxlevel(AsyncWebServerRequest *request)
 // TX test (/txtest). Leaving the page stops the polling and any running TX test.
 static const char UI_RADIOTEST[] PROGMEM = R"HTML(<h2 class="pg">Radio level and TX test</h2>
 <div class="tile" style="margin-bottom:8px"><small>RX level live &middot; squelch open = noise</small><b class="mono" id="lv">&ndash;</b>
-<div class="lvl"><div style="height:12px"><b id="lbar" style="height:12px;width:0"></b></div></div><span id="la">Input &ndash; mV</span></div>
-<p class="muted">The decoder listens only above 0.010 Vrms (&minus;40 dBV). Input range at GPIO36 is about 0&hellip;950 mV; CLIP means overdriven: turn RV2 or the radio volume down.</p>
+<div class="lvl"><div style="height:12px"><b id="lbar" style="height:12px;width:0"></b></div></div><span id="la">Input &ndash; mV</span><span class="mono" id="ldx" style="display:block"></span></div>
+<p class="muted">The decoder listens only above 0.010 Vrms (&minus;40 dBV). Flags: HDLC flags seen (each packet starts with many). Frames with bad CRC: tones heard but bits wrong (level or distortion). Counters run from start-up. Input range at GPIO36 is about 0&hellip;950 mV; CLIP means overdriven: turn RV2 or the radio volume down.</p>
 <div class="tile" style="margin-bottom:8px"><small>Last received packet</small><b class="mono" id="pk">&ndash;</b><span class="mono" id="pr" style="word-break:break-all"></span></div>
 <div class="gh">TX test</div>
 <div class="seg"><button type="button" id="tb4" onclick="tt(4)">PTT</button><button type="button" id="tb1" onclick="tt(1)">1200 Hz</button><button type="button" id="tb2" onclick="tt(2)">2200 Hz</button><button type="button" id="tb3" onclick="tt(3)">1200/2200 Hz</button></div>
@@ -11666,7 +11675,7 @@ function ts(j){TT=j.on;E('tts').textContent=j.t;for(var i=1;i<5;i++){var b=E('tb
 window.tt=function(m){fetch('/txtest?m='+(TT?0:m)).then(function(r){return r.json()}).then(ts).catch(function(){E('tts').textContent='No answer'})};
 function lv(){if(stopped)return;fetch('/rxlevel').then(function(r){return r.json()}).then(function(j){var v=j.mv/1000,d=20*Math.log10(v);if(!isFinite(d)||d<-60)d=-60;
 var c=(j.lo>=0&&(j.lo<20||j.hi>930));E('lv').textContent=j.tx?'TX':(v.toFixed(3)+' Vrms · '+d.toFixed(1)+' dBV');
-E('la').textContent='Input '+(j.lo<0?'–':(j.lo+'…'+j.hi))+' mV'+(c?' · CLIP':'');var b=E('lbar');b.style.width=Math.round((d+60)/60*100)+'%';b.style.background=c||d>-10?'var(--red)':(d>-40?'var(--o5)':'var(--och)')}).catch(function(){}).then(function(){if(!stopped)t1=setTimeout(lv,300)})}
+E('la').textContent='Input '+(j.lo<0?'–':(j.lo+'…'+j.hi))+' mV'+(c?' · CLIP':'');if(j.sps!==undefined)E('ldx').textContent='Samples/s '+j.sps+' \u00b7 decoder '+(j.dcd?'on':'off')+' \u00b7 flags '+j.fl+' \u00b7 frames ok '+j.ok+' / bad CRC '+j.bad;var b=E('lbar');b.style.width=Math.round((d+60)/60*100)+'%';b.style.background=c||d>-10?'var(--red)':(d>-40?'var(--o5)':'var(--och)')}).catch(function(){}).then(function(){if(!stopped)t1=setTimeout(lv,300)})}
 function tq(){if(stopped)return;fetch('/txtest').then(function(r){return r.json()}).then(ts).catch(function(){}).then(function(){if(!stopped)t2=setTimeout(tq,2000)})}
 function live(){if(stopped)return;ws=new WebSocket('ws://'+location.hostname+':81/ws');ws.onclose=function(){if(!stopped)setTimeout(live,3000)};
 ws.onmessage=function(e){var j;try{j=JSON.parse(e.data)}catch(x){return}if(parseInt(j.Active)!=1||j.Dir=='TX')return;var v=parseFloat(j.mVrms)/1000,d=20*Math.log10(v);
