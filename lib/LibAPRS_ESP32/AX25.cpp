@@ -160,7 +160,7 @@ static uint8_t outputFrameBuffer[AX25_FRAME_MAX_SIZE];
  * @param bit Input bit
  * @param *crc CRC pointer
  */
-static void calculateCRC(uint8_t bit, uint16_t *crc)
+static void IRAM_ATTR calculateCRC(uint8_t bit, uint16_t *crc)
 {
     uint16_t xor_result;
     xor_result = *crc ^ bit;
@@ -836,7 +836,7 @@ void Ax25BitParse(uint8_t bit, uint8_t modem,uint16_t mV)
 }
 
 
-uint8_t Ax25GetTxBit(void)
+uint8_t IRAM_ATTR Ax25GetTxBit(void) // SM0TGY: IRAM - called from the TX interrupt
 {
 	if(txBitIdx == 8)
 	{

@@ -4,6 +4,8 @@
 #include "esp_log.h"
 #include "driver/gpio.h"
 #include "esp_cpu.h"
+#include "hal/sdm_ll.h"
+#include "soc/gpio_sd_struct.h"
 #include "esp_adc/adc_oneshot.h"
 #include "esp_adc/adc_cali.h"
 #include "esp_adc/adc_cali_scheme.h"
@@ -1539,7 +1541,7 @@ void IRAM_ATTR sample_dac_isr()
     sinwave = MODEM_BAUDRATE_TIMER_HANDLER();
     // Sigma-delta duty of one channel, the value ranges from -128 to 127, recommended range is -90 ~ 90.The waveform is more like a random one in this range.
     int8_t sine = (int8_t)(((sinwave - 127) * 12) >> 4); // Redue sine = -85 ~ 85
-    sigmadelta_set_duty(SIGMADELTA_CHANNEL_0, sine);
+    sdm_ll_set_pulse_density(&SDM, SIGMADELTA_CHANNEL_0, sine); // SM0TGY: register write in IRAM (sigmadelta_set_duty runs from flash)
     portEXIT_CRITICAL_ISR(&timerMux); // ISR end
     // Give a semaphore that we can check in the loop
     // xSemaphoreGiveFromISR(timerSemaphore, NULL);

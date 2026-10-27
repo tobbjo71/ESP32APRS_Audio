@@ -12,7 +12,8 @@
 #include "fir_filter.h"
 
 #define SIN_LEN 512
-static const uint8_t sin_table[] =
+// SM0TGY: DRAM_ATTR - read 38400 times/s from the TX interrupt; a flash read can stall behind PSRAM/flash traffic
+static const DRAM_ATTR uint8_t sin_table[] =
     {
         128,
         129,
@@ -144,7 +145,7 @@ static const uint8_t sin_table[] =
         255,
 };
 
-inline static uint8_t sinSample(uint16_t i)
+__attribute__((always_inline)) inline static uint8_t sinSample(uint16_t i)
 {
     uint16_t newI = i % (SIN_LEN / 2);
     newI = (newI >= (SIN_LEN / 4)) ? (SIN_LEN / 2 - newI - 1) : newI;

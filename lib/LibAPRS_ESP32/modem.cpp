@@ -330,7 +330,7 @@ static inline uint8_t descramble(uint8_t in)
 	return bit;
 }
 
-static inline uint8_t scramble(uint8_t in)
+__attribute__((always_inline)) static inline uint8_t scramble(uint8_t in)
 {
 	// G3RUH scrambling (x^17+x^12+1)
 	uint8_t bit = ((lfsr & 0x10000) > 0) ^ ((lfsr & 0x800) > 0) ^ (in > 0);
@@ -378,7 +378,7 @@ void MODEM_DECODE(int16_t sample, uint16_t mVrms)
  */
 static uint16_t phaseAcc = 0;
 static uint16_t sampleIndex = 0;
-uint8_t MODEM_BAUDRATE_TIMER_HANDLER(void)
+uint8_t IRAM_ATTR MODEM_BAUDRATE_TIMER_HANDLER(void) // SM0TGY: IRAM - runs 38400 times/s in the TX interrupt
 {
 	uint8_t sinwave = 0;
 	// MODEM_LL_BAUDRATE_TIMER_CLEAR_INTERRUPT_FLAG();
