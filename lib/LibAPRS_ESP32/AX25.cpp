@@ -141,6 +141,8 @@ struct RxState
 
 static struct RxState rxState[MODEM_MAX_DEMODULATOR_COUNT];
 
+Ax25DiagEntry ax25DiagLog[AX25_DIAG_LOG];
+volatile uint32_t ax25DiagLogN = 0;
 volatile uint32_t ax25DiagFlags = 0, ax25DiagOk = 0, ax25DiagBad = 0; // SM0TGY: HDLC flags, frames with good / bad CRC (counted per demodulator)
 static uint16_t lastCrc = 0; //CRC of the last received frame. If not 0, a frame was successfully received
 static uint16_t rxMultiplexDelay = 0; //simple delay for decoder multiplexer to avoid receiving the same frame twice
@@ -676,6 +678,16 @@ void Ax25BitParse(uint8_t bit, uint8_t modem,uint16_t mV)
 						ax25DiagOk++;
 					else
 						ax25DiagBad++;
+					{ // SM0TGY: frame log for the radio test page
+						Ax25DiagEntry *e = &ax25DiagLog[ax25DiagLogN % AX25_DIAG_LOG];
+						e->ms = millis();
+						e->modem = modem;
+						e->len = rx->frameIdx;
+						e->ok = crcOk;
+						e->mV = mV;
+						ModemGetSignalLevel(modem, &e->peak, &e->valley, &e->level);
+						ax25DiagLogN++;
+					}
 					if(crcOk) //check CRC
 					{
 						uint16_t i = 13;

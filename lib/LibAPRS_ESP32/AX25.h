@@ -196,4 +196,20 @@ void Ax25TxDelay(uint16_t delay_ms);
 void Ax25TimeSlot(uint16_t ts);
 bool Ax25NewRxFrames(void);
 
+
+// SM0TGY: decoder diagnostics (radio test page): every frame that ends with a flag and is
+// long enough to be AX.25 is logged with its CRC result, level and demodulator.
+#define AX25_DIAG_LOG 24
+typedef struct
+{
+	uint32_t ms;
+	uint8_t modem;
+	uint16_t len;
+	bool ok;
+	uint16_t mV;
+	int8_t peak, valley;
+	uint8_t level;
+} Ax25DiagEntry;
+extern Ax25DiagEntry ax25DiagLog[AX25_DIAG_LOG];
+extern volatile uint32_t ax25DiagLogN;
 #endif /* AX25_H_ */
