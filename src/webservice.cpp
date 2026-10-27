@@ -13,6 +13,7 @@
 #include "wireguard_vpn.h"
 #include <LibAPRSesp.h>
 #include "modem.h"
+#include "driver/gpio.h"
 #include <parse_aprs.h>
 #include "jquery_min_js.h"
 #include "aprs_symbols.h"
@@ -11613,6 +11614,16 @@ static void txTestRun(void *arg)
 	vTaskDelete(NULL);
 }
 
+// SM0TGY: reads the PTT pin back (input enabled alongside the output), so the page shows
+// whether the pin really is high: driven high but read low means something holds it down.
+static const char *pttPinLevel()
+{
+	if (_ptt_pin < 0)
+		return "none";
+	gpio_set_direction((gpio_num_t)_ptt_pin, GPIO_MODE_INPUT_OUTPUT); // keeps the output level
+	return gpio_get_level((gpio_num_t)_ptt_pin) ? "high" : "low";
+}
+
 static const char *txTestName(int m)
 {
 	return m == 1 ? "1200 Hz" : (m == 2 ? "2200 Hz" : (m == 3 ? "1200/2200 Hz" : "PTT only"));
@@ -11623,7 +11634,7 @@ void handle_txtest(AsyncWebServerRequest *request)
 	if (!request->authenticate(config.http_username, config.http_password))
 		return request->requestAuthentication();
 	int m = request->hasArg("m") ? request->arg("m").toInt() : -1;
-	char msg[160];
+	char msg[200];
 	if (m == 0)
 	{
 		txTestUntil = millis();
@@ -11651,9 +11662,9 @@ void handle_txtest(AsyncWebServerRequest *request)
 	{
 		int left = txTestTask ? (int)((int32_t)(txTestUntil - millis()) / 1000) : 0;
 		if (txTestTask)
-			snprintf(msg, sizeof(msg), "{\"on\":%d,\"t\":\"TX ON: %s, stops by itself in %d s\"}", txTestMode, txTestName(txTestMode), left);
+			snprintf(msg, sizeof(msg), "{\"on\":%d,\"t\":\"TX ON: %s, PTT GPIO%d active %s, pin reads %s, stops by itself in %d s\"}", txTestMode, txTestName(txTestMode), _ptt_pin, _ptt_active ? "HIGH" : "LOW", pttPinLevel(), left);
 		else
-			snprintf(msg, sizeof(msg), "{\"on\":0,\"t\":\"Off\"}");
+			snprintf(msg, sizeof(msg), "{\"on\":0,\"t\":\"Off (PTT GPIO%d active %s, pin reads %s)\"}", _ptt_pin, _ptt_active ? "HIGH" : "LOW", pttPinLevel());
 	}
 	request->send(200, "application/json", msg);
 }
@@ -11673,8 +11684,42 @@ void handle_rxlevel(AsyncWebServerRequest *request)
 	request->send(200, "application/json", msg);
 }
 
+// SM0TGY: radio set-up page (More -> Radio level and TX test), loaded into the app shell.
+// Live RX level for RV2 (/rxlevel), level of the last decoded packet (WebSocket), and the
+// TX test (/txtest). Leaving the page stops the polling and any running TX test.
+static const char UI_RADIOTEST[] PROGMEM = R"HTML(<h2 class="pg">Radio level and TX test</h2>
+<div class="tile" style="margin-bottom:8px"><small>RX level live &middot; squelch open = noise</small><b class="mono" id="lv">&ndash;</b>
+<div class="lvl"><div style="height:12px"><b id="lbar" style="height:12px;width:0"></b></div></div><span id="la">Input &ndash; mV</span></div>
+<p class="muted">The decoder listens only above 0.010 Vrms (&minus;40 dBV). Input range at GPIO36 is about 0&hellip;950 mV; CLIP means overdriven: turn RV2 or the radio volume down.</p>
+<div class="tile" style="margin-bottom:8px"><small>Last received packet</small><b class="mono" id="pk">&ndash;</b><span class="mono" id="pr" style="word-break:break-all"></span></div>
+<div class="gh">TX test</div>
+<div class="seg"><button type="button" id="tb4" onclick="tt(4)">PTT</button><button type="button" id="tb1" onclick="tt(1)">1200 Hz</button><button type="button" id="tb2" onclick="tt(2)">2200 Hz</button><button type="button" id="tb3" onclick="tt(3)">1200/2200 Hz</button></div>
+<p><b id="tts">&ndash;</b></p>
+<p class="muted">A button stays on until it is pressed again, at most 180 s; leaving this page stops it. It keys the radio: measure PTT, set the TX level with RV1. Use a dummy load or low power.</p>
+<script>(function(){var stopped=false,TT=0,ws=null,t1=null,t2=null;function E(i){return document.getElementById(i)}
+function ts(j){TT=j.on;E('tts').textContent=j.t;for(var i=1;i<5;i++){var b=E('tb'+i);b.style.background=TT==i?'var(--red)':'';b.style.color=TT==i?'#fff':'';b.style.borderColor=TT==i?'var(--red)':''}}
+window.tt=function(m){fetch('/txtest?m='+(TT?0:m)).then(function(r){return r.json()}).then(ts).catch(function(){E('tts').textContent='No answer'})};
+function lv(){if(stopped)return;fetch('/rxlevel').then(function(r){return r.json()}).then(function(j){var v=j.mv/1000,d=20*Math.log10(v);if(!isFinite(d)||d<-60)d=-60;
+var c=(j.lo>=0&&(j.lo<20||j.hi>930));E('lv').textContent=j.tx?'TX':(v.toFixed(3)+' Vrms · '+d.toFixed(1)+' dBV');
+E('la').textContent='Input '+(j.lo<0?'–':(j.lo+'…'+j.hi))+' mV'+(c?' · CLIP':'');var b=E('lbar');b.style.width=Math.round((d+60)/60*100)+'%';b.style.background=c||d>-10?'var(--red)':(d>-40?'var(--o5)':'var(--och)')}).catch(function(){}).then(function(){if(!stopped)t1=setTimeout(lv,300)})}
+function tq(){if(stopped)return;fetch('/txtest').then(function(r){return r.json()}).then(ts).catch(function(){}).then(function(){if(!stopped)t2=setTimeout(tq,2000)})}
+function live(){if(stopped)return;ws=new WebSocket('ws://'+location.hostname+':81/ws');ws.onclose=function(){if(!stopped)setTimeout(live,3000)};
+ws.onmessage=function(e){var j;try{j=JSON.parse(e.data)}catch(x){return}if(parseInt(j.Active)!=1||j.Dir=='TX')return;var v=parseFloat(j.mVrms)/1000,d=20*Math.log10(v);
+E('pk').textContent=isFinite(d)?(v.toFixed(3)+' Vrms · '+d.toFixed(1)+' dBV'):'–';try{E('pr').textContent=atob(j.RAW)}catch(x){}}}
+window.pageStop=function(){stopped=true;clearTimeout(t1);clearTimeout(t2);try{if(ws)ws.close()}catch(e){}if(TT)fetch('/txtest?m=0')};
+lv();tq();live()})();</script>
+)HTML";
+
 void handle_test(AsyncWebServerRequest *request)
 {
+	// SM0TGY: the page is a part of the app shell; a direct visit (no XHR) opens it there
+	if (!request->hasHeader("X-Requested-With"))
+	{
+		request->redirect("/#radiotest");
+		return;
+	}
+	if (!request->authenticate(config.http_username, config.http_password))
+		return request->requestAuthentication();
 	// if (request->hasArg("sendBeacon"))
 	// {
 	// 	String tnc2Raw = send_fix_location();
@@ -11714,28 +11759,7 @@ void handle_test(AsyncWebServerRequest *request)
 	// SM0TGY: offline level meter (no jQuery/Highcharts from the internet).
 	// Shows the level of each received packet in Vrms and dBV with a bar
 	// (-40..0 dBV). Used when setting RV2 (RX level).
-	strcpy(webString, "<html>\n<head>\n<style>#bar{height:18px;background:#0a0;width:0}#barbox{width:300px;border:1px solid #888}</style>\n");
-	strcat(webString, "<script>\n");
-	strcat(webString, "function vu(){if(window.vuWs){try{window.vuWs.close();}catch(e){}}var ws=new WebSocket('ws://'+location.hostname+':81/ws');window.vuWs=ws;\n");
-	strcat(webString, "ws.onmessage=function(event){if(!document.getElementById('vrms')){ws.close();return;}var j=JSON.parse(event.data);if(parseInt(j.Active)!=1)return;\n");
-	strcat(webString, "var v=parseFloat(j.mVrms)/1000;var d=20*Math.log10(v);if(!isFinite(d)||d<-40)d=-40;\n");
-	strcat(webString, "document.getElementById('vrms').innerHTML=v.toFixed(3);document.getElementById('dbv').innerHTML=d.toFixed(1);\n");
-	strcat(webString, "var b=document.getElementById('bar');b.style.width=Math.round((d+40)/40*300)+'px';b.style.background=(d>-10)?'#c02316':(d>-20?'#00c000':'#e0b000');\n");
-	strcat(webString, "var t=document.getElementById('raw_txt');t.value+=new Date(Number(j.timeStamp)*1000).toISOString()+' ['+v.toFixed(3)+' Vrms, '+d.toFixed(1)+' dBV]\\n'+atob(j.RAW)+'\\n';t.scrollTop=t.scrollHeight;};}\n");
-	strcat(webString, "var TT=0;function ts(j){TT=j.on;document.getElementById('tts').textContent=j.t;for(var i=1;i<5;i++){var e=document.getElementById('tb'+i);e.style.background=(TT==i)?'#c02316':'';e.style.color=(TT==i)?'#fff':''}}\n");
-	strcat(webString, "function tt(m){fetch('/txtest?m='+(TT==m?0:(TT?0:m))).then(function(r){return r.json()}).then(ts).catch(function(){document.getElementById('tts').textContent='No answer'})}\n");
-	strcat(webString, "function lv(){fetch('/rxlevel').then(function(r){return r.json()}).then(function(j){var v=j.mv/1000,d=20*Math.log10(v);if(!isFinite(d)||d<-60)d=-60;document.getElementById('lv').textContent=j.tx?'TX':v.toFixed(3);document.getElementById('ld').textContent=j.tx?'-':d.toFixed(1);\n");
-	strcat(webString, "var c=(j.lo>=0&&(j.lo<20||j.hi>930));document.getElementById('la').textContent=j.lo<0?'-':(j.lo+'..'+j.hi+(c?' CLIP':''));var b=document.getElementById('lbar');b.style.width=Math.round((d+60)/60*300)+'px';b.style.background=c||d>-10?'#c02316':(d>-20?'#00c000':'#e0b000')}).catch(function(){}).then(function(){setTimeout(lv,300)})}\n");
-	strcat(webString, "function tq(){fetch('/txtest').then(function(r){return r.json()}).then(ts).catch(function(){}).then(function(){setTimeout(tq,2000)})}\n");
-	strcat(webString, "</script>\n");
-	strcat(webString, "</head><body>\n<table>\n");
-	strcat(webString, "<tr><td><div style=\"margin:10px\"><b>RX audio level (last packet)</b><br />Vrms: <span id=\"vrms\">-</span> &nbsp; dBV: <span id=\"dbv\">-</span><div id=\"barbox\"><div id=\"bar\"></div></div><small>-40 dBV ... 0 dBV. Green -20..-10 dBV, red above -10 dBV.</small></div></td></tr>\n");
-	strcat(webString, "<tr><td><div style=\"margin:10px\"><b>RX level live</b> (squelch open: noise)<br />Vrms: <span id=\"lv\">-</span> &nbsp; dBV: <span id=\"ld\">-</span> &nbsp; Input: <span id=\"la\">-</span> mV<div id=\"barbox\"><div id=\"lbar\" style=\"height:18px;width:0\"></div></div><small>Input = lowest..highest voltage at GPIO36 since the last reading (ADC range about 0..950 mV). CLIP means the input is overdriven: turn RV2 or the radio volume down.</small></div></td></tr>\n");
-	strcat(webString, "<tr><td><div style=\"margin:10px\"><b>TX test</b> (on until pressed again, at most 180 s)<br /><button id=\"tb4\" onclick=\"tt(4)\">PTT</button> <button id=\"tb1\" onclick=\"tt(1)\">1200 Hz</button> <button id=\"tb2\" onclick=\"tt(2)\">2200 Hz</button> <button id=\"tb3\" onclick=\"tt(3)\">1200/2200 Hz</button><br /><b><span id=\"tts\"></span></b><br /><small>Keys the radio: measure PTT, set the TX level with RV1. Use a dummy load or low power.</small></div></td></tr>\n");
-	strcat(webString, "<tr><td><div style=\"margin: 15px;\">Terminal<br /><textarea id=\"raw_txt\" name=\"raw_txt\" rows=\"50\" cols=\"80\" /></textarea></div></td></tr>\n");
-	strcat(webString, "</table>\n<script>vu();lv();tq();</script>\n");
-
-	strcat(webString, "</body></html>\n");
+	strcpy(webString, UI_RADIOTEST);
 
 	AsyncWebServerResponse *response = beginBufferResponse(request, webString);
 	response->addHeader("Test", "content");
@@ -12458,8 +12482,7 @@ void webService()
 #ifdef FORK_OTA_GITHUB
 	otaGithubRoutes(async_server); // SM0TGY: update from the fork on GitHub
 #endif
-	async_server.on("/symbol", HTTP_GET, [](AsyncWebServerRequest *request)
-					{ handle_symbol(request); });
+	// SM0TGY 2.8: /symbol removed - old upstream page that no menu reaches
 	// async_server.on("/symbol2", HTTP_GET | HTTP_POST, [](AsyncWebServerRequest *request)
 	// 				{ handle_symbol2(request); });
 	async_server.on("/logout", HTTP_GET, [](AsyncWebServerRequest *request)
@@ -12482,8 +12505,7 @@ void webService()
 					{ handle_msg(request); });
 	async_server.on("/mod", HTTP_GET | HTTP_POST, [](AsyncWebServerRequest *request)
 					{ handle_mod(request); });
-	async_server.on("/default", HTTP_GET | HTTP_POST, [](AsyncWebServerRequest *request)
-					{ handle_default(); });
+	// SM0TGY 2.8: /default removed - old upstream page that no menu reaches
 	async_server.on("/igate", HTTP_GET | HTTP_POST, [](AsyncWebServerRequest *request)
 					{ handle_igate(request); });
 	async_server.on("/digi", HTTP_GET | HTTP_POST, [](AsyncWebServerRequest *request)
@@ -12518,12 +12540,9 @@ void webService()
 	// 				{ handle_realtime(request); });
 	async_server.on("/about", HTTP_GET | HTTP_POST, [](AsyncWebServerRequest *request)
 					{ handle_about(request); });
-	async_server.on("/dashboard", HTTP_GET, [](AsyncWebServerRequest *request)
-					{ handle_dashboard(request); });
-	async_server.on("/sidebarInfo", HTTP_GET, [](AsyncWebServerRequest *request)
-					{ handle_sidebar(request); });
-	async_server.on("/sysinfo", HTTP_GET, [](AsyncWebServerRequest *request)
-					{ handle_sysinfo(request); });
+	// SM0TGY 2.8: /dashboard removed - old upstream page that no menu reaches
+	// SM0TGY 2.8: /sidebarInfo removed - old upstream page that no menu reaches
+	// SM0TGY 2.8: /sysinfo removed - old upstream page that no menu reaches
 	// async_server.on("/lastHeard", HTTP_GET, [](AsyncWebServerRequest *request)
 	// 				{ handle_lastHeard(request); });
 	async_server.on("/style.css", HTTP_GET, [](AsyncWebServerRequest *request)

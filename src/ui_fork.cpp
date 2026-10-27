@@ -68,7 +68,7 @@ function symClose(){document.getElementById('symov').hidden=true}
 function symSet(sel,c,t){symClose();if(sel===null)setValue(c,t);else setValue(sel,c,t)}
 if(window.EventSource){var es=new EventSource('/eventMsg');es.addEventListener('chatMsg',function(e){var m=document.getElementById('chatMsg');if(m)m.innerHTML=e.data},false)}
 $.ajaxPrefilter(function(o){if(o.url!='/update'&&!o.timeout)o.timeout=20000});$(document).ajaxComplete(function(){$('#contentmain button:disabled').prop('disabled',false)});
-st();setInterval(st,5000);if(location.hash=='#system'){history.replaceState(null,'','/');setting('/system','System and status')}else go('heard');
+st();setInterval(st,5000);var DL={'#system':['/system','System and status'],'#radiotest':['/tnc2','Radio level and TX test']}[location.hash];if(DL){history.replaceState(null,'','/');setting(DL[0],DL[1])}else go('heard');
 </script>
 </body></html>
 )HTML";
@@ -146,6 +146,7 @@ static const char UI_MORE[] PROGMEM = "<h2 class=\"pg\">Settings</h2>\n"
 	"<div class=\"gh\">Operation</div><div class=\"grp\">\n"
 	ROW("/tracker", "Tracker", "m_trk")
 	ROW("/radio", "Radio", "m_radio")
+	ROW("/tnc2", "Radio level and TX test", "m_rt")
 	ROW("/gnss", "GNSS", "m_gnss")
 	ROW("/digi", "Digipeater", "m_digi")
 	ROW("/igate", "IGate", "m_igate")
