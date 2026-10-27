@@ -384,7 +384,13 @@ uint8_t MODEM_BAUDRATE_TIMER_HANDLER(void)
 	// MODEM_LL_BAUDRATE_TIMER_CLEAR_INTERRUPT_FLAG();
 	if (sampleIndex == 0)
 	{
-		if (Ax25GetTxBit() == 0) // get next bit and check if it's 0
+		if (txTestState == TEST_MARK) // SM0TGY: TX test tones (radio level and PTT check)
+			currentSymbol = 0;
+		else if (txTestState == TEST_SPACE)
+			currentSymbol = 1;
+		else if (txTestState == TEST_ALTERNATING)
+			currentSymbol ^= 1;
+		else if (Ax25GetTxBit() == 0) // get next bit and check if it's 0
 		{
 			currentSymbol ^= 1; // change symbol - NRZI encoding
 		}
@@ -584,6 +590,7 @@ static void decode(uint8_t symbol, uint8_t demod, uint16_t mV)
 	}
 }
 
+extern volatile bool hw_afsk_dac_isr;
 void ModemTxTestStart(enum ModemTxTestMode type)
 {
 	if (txTestState != TEST_DISABLED) // TX test is already running
@@ -591,6 +598,10 @@ void ModemTxTestStart(enum ModemTxTestMode type)
 
 	setPtt(true); // PTT on
 	txTestState = type;
+	delay(50); // SM0TGY: start the tone like ModemTransmitStart (the tone was never started upstream)
+	hw_afsk_dac_isr = true;
+	AFSK_TimerEnable(false);
+	DAC_TimerEnable(true);
 }
 extern volatile int8_t adcEn;
 extern volatile int8_t dacEn;
