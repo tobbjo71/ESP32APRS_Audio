@@ -11562,12 +11562,17 @@ extern int8_t _ptt_pin;
 extern bool _ptt_active;
 extern int mVrms;
 extern volatile int16_t rxAdcMin, rxAdcMax;
+extern volatile uint32_t dacIsrMaxGap, dacIsrLate, adcIsrMaxGap, adcIsrLate, isrCpuMhz;
+extern void dacIsrGapReset();
 static volatile uint32_t txTestUntil = 0;
 static volatile int txTestMode = 0;
 static TaskHandle_t txTestTask = NULL;
 static void txTestRun(void *arg)
 {
 	int m = (int)(uintptr_t)arg;
+	dacIsrGapReset();
+	dacIsrMaxGap = 0;
+	dacIsrLate = 0;
 	if (m == 4)
 		setPtt(true);
 	else
@@ -11600,7 +11605,7 @@ void handle_txtest(AsyncWebServerRequest *request)
 	if (!request->authenticate(config.http_username, config.http_password))
 		return request->requestAuthentication();
 	int m = request->hasArg("m") ? request->arg("m").toInt() : -1;
-	char msg[200];
+	char msg[320];
 	if (m == 0)
 	{
 		txTestUntil = millis();
@@ -11628,7 +11633,11 @@ void handle_txtest(AsyncWebServerRequest *request)
 	{
 		int left = txTestTask ? (int)((int32_t)(txTestUntil - millis()) / 1000) : 0;
 		if (txTestTask)
-			snprintf(msg, sizeof(msg), "{\"on\":%d,\"t\":\"TX ON: %s, PTT GPIO%d active %s, pin reads %s, stops by itself in %d s\"}", txTestMode, txTestName(txTestMode), _ptt_pin, _ptt_active ? "HIGH" : "LOW", pttPinLevel(), left);
+		{
+			snprintf(msg, sizeof(msg), "{\"on\":%d,\"t\":\"TX ON: %s, PTT GPIO%d active %s, pin reads %s, stops by itself in %d s. Tone timer: longest gap %lu us (normal 26), %lu gaps over 52 us since last view\"}", txTestMode, txTestName(txTestMode), _ptt_pin, _ptt_active ? "HIGH" : "LOW", pttPinLevel(), left, (unsigned long)(dacIsrMaxGap / isrCpuMhz), (unsigned long)dacIsrLate);
+			dacIsrMaxGap = 0;
+			dacIsrLate = 0;
+		}
 		else
 			snprintf(msg, sizeof(msg), "{\"on\":0,\"t\":\"Off (PTT GPIO%d active %s, pin reads %s)\"}", _ptt_pin, _ptt_active ? "HIGH" : "LOW", pttPinLevel());
 	}
@@ -11652,10 +11661,13 @@ void handle_rxlevel(AsyncWebServerRequest *request)
 	rxAdcMax = -32768;
 	if (hi < lo)
 		lo = hi = -1;
-	char msg[200];
-	snprintf(msg, sizeof(msg), "{\"mv\":%d,\"lo\":%d,\"hi\":%d,\"tx\":%d,\"sps\":%lu,\"dcd\":%d,\"fl\":%lu,\"ok\":%lu,\"bad\":%lu}",
+	char msg[260];
+	snprintf(msg, sizeof(msg), "{\"mv\":%d,\"lo\":%d,\"hi\":%d,\"tx\":%d,\"sps\":%lu,\"dcd\":%d,\"fl\":%lu,\"ok\":%lu,\"bad\":%lu,\"gap\":%lu,\"late\":%lu,\"mhz\":%lu}",
 			 mVrms, lo, hi, getTransmit() ? 1 : 0, (unsigned long)sps, dcd_cnt > 3 ? 1 : 0,
-			 (unsigned long)ax25DiagFlags, (unsigned long)ax25DiagOk, (unsigned long)ax25DiagBad);
+			 (unsigned long)ax25DiagFlags, (unsigned long)ax25DiagOk, (unsigned long)ax25DiagBad,
+			 (unsigned long)(adcIsrMaxGap / isrCpuMhz), (unsigned long)adcIsrLate, (unsigned long)isrCpuMhz);
+	adcIsrMaxGap = 0;
+	adcIsrLate = 0;
 	request->send(200, "application/json", msg);
 }
 
@@ -11703,7 +11715,7 @@ function ts(j){TT=j.on;E('tts').textContent=j.t;for(var i=1;i<5;i++){var b=E('tb
 window.tt=function(m){fetch('/txtest?m='+(TT?0:m)).then(function(r){return r.json()}).then(ts).catch(function(){E('tts').textContent='No answer'})};
 function lv(){if(stopped)return;fetch('/rxlevel').then(function(r){return r.json()}).then(function(j){var v=j.mv/1000,d=20*Math.log10(v);if(!isFinite(d)||d<-60)d=-60;
 var c=(j.lo>=0&&(j.lo<20||j.hi>930));E('lv').textContent=j.tx?'TX':(v.toFixed(3)+' Vrms · '+d.toFixed(1)+' dBV');
-E('la').textContent='Input '+(j.lo<0?'–':(j.lo+'…'+j.hi))+' mV'+(c?' · CLIP':'');if(j.sps!==undefined)E('ldx').textContent='Samples/s '+j.sps+' \u00b7 decoder '+(j.dcd?'on':'off')+' \u00b7 flags '+j.fl+' \u00b7 frames ok '+j.ok+' / bad CRC '+j.bad;var b=E('lbar');b.style.width=Math.round((d+60)/60*100)+'%';b.style.background=c||d>-10?'var(--red)':(d>-40?'var(--o5)':'var(--och)')}).catch(function(){}).then(function(){if(!stopped)t1=setTimeout(lv,300)})}
+E('la').textContent='Input '+(j.lo<0?'–':(j.lo+'…'+j.hi))+' mV'+(c?' · CLIP':'');if(j.sps!==undefined)E('ldx').textContent='Samples/s '+j.sps+' \u00b7 decoder '+(j.dcd?'on':'off')+' \u00b7 flags '+j.fl+' \u00b7 frames ok '+j.ok+' / bad CRC '+j.bad+(j.gap!==undefined?' \u00b7 sample timer longest gap '+j.gap+' \u00b5s (normal 104), late '+j.late+' \u00b7 CPU '+j.mhz+' MHz':'');var b=E('lbar');b.style.width=Math.round((d+60)/60*100)+'%';b.style.background=c||d>-10?'var(--red)':(d>-40?'var(--o5)':'var(--och)')}).catch(function(){}).then(function(){if(!stopped)t1=setTimeout(lv,300)})}
 function rl(){if(stopped)return;fetch('/rxlog').then(function(r){return r.json()}).then(function(a){var h='';a.forEach(function(e){h+='<tr><td>'+e.ago+'</td><td>'+e.m+'</td><td>'+e.len+'</td><td>'+(e.ok?'ok':'<b style="color:var(--red)">bad</b>')+'</td><td>'+(e.mv/1000).toFixed(3)+'</td><td>'+e.pk+' / '+e.va+' / '+e.lv+'</td></tr>'});E('rlog').innerHTML=h||'<tr><td colspan="6">No frames yet</td></tr>'}).catch(function(){}).then(function(){if(!stopped)t3=setTimeout(rl,2000)})}
 function tq(){if(stopped)return;fetch('/txtest').then(function(r){return r.json()}).then(ts).catch(function(){}).then(function(){if(!stopped)t2=setTimeout(tq,2000)})}
 function live(){if(stopped)return;ws=new WebSocket('ws://'+location.hostname+':81/ws');ws.onclose=function(){if(!stopped)setTimeout(live,3000)};
