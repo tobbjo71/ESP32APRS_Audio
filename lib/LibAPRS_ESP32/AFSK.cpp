@@ -2,6 +2,7 @@
 #include <Arduino.h>
 #include "AFSK.h"
 #include "esp_log.h"
+#include "driver/gpio.h"
 #include "esp_adc/adc_oneshot.h"
 #include "esp_adc/adc_cali.h"
 #include "esp_adc/adc_cali_scheme.h"
@@ -1424,6 +1425,10 @@ void AFSK_init(int8_t adc_pin, int8_t dac_pin, int8_t ptt_pin, int8_t sql_pin, i
   tp->SlotTime = 10;      // 100ms
   tp->TXDELAY = 50;       // 500ms
   tp->persistence_P = 63; // P = 0.25
+  // SM0TGY: give the PTT pad back to plain GPIO (on the ESP32 GPIO32/33 can also be routed
+  // to the RTC / 32 kHz crystal pads); then setPtt() drives it as before.
+  if (_ptt_pin >= 0)
+    gpio_reset_pin((gpio_num_t)_ptt_pin);
   AFSK_hw_init();
 }
 
