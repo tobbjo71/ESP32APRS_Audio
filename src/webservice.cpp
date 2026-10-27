@@ -2268,20 +2268,13 @@ void handle_radio(AsyncWebServerRequest *request)
 		}
 
 		strcpy(html, "<script type=\"text/javascript\">\n");
-		strcat(html, "var sliderVol = document.getElementById(\"sliderVolume\");\n");
-		strcat(html, "var outputVol = document.getElementById(\"volShow\");\n");
-		strcat(html, "var sliderSql = document.getElementById(\"sliderSql\");\n");
-		strcat(html, "var outputSql = document.getElementById(\"sqlShow\");\n");
-		strcat(html, "outputVol.innerHTML = sliderVol.value;\n");
-		strcat(html, "outputSql.innerHTML = sliderSql.value;\n");
-		strcat(html, "\n");
-		strcat(html, "sliderVol.oninput = function () {\n");
-		strcat(html, "outputVol.innerHTML = this.value;\n");
-		strcat(html, "}\n");
-		strcat(html, "sliderSql.oninput = function () {\n");
-		strcat(html, "outputSql.innerHTML = this.value;\n");
-		strcat(html, "}\n");
-		strcat(html, "\n");
+		// SM0TGY: the radio-module sliders exist only without FORK_SLIM; unguarded, the null
+		// access stopped the script before the submit handler below was bound, and Apply then
+		// posted the form natively to /# (Not found).
+		strcat(html, "var sliderVol=document.getElementById(\"sliderVolume\"),outputVol=document.getElementById(\"volShow\");\n");
+		strcat(html, "var sliderSql=document.getElementById(\"sliderSql\"),outputSql=document.getElementById(\"sqlShow\");\n");
+		strcat(html, "if(sliderVol&&outputVol){outputVol.innerHTML=sliderVol.value;sliderVol.oninput=function(){outputVol.innerHTML=this.value}}\n");
+		strcat(html, "if(sliderSql&&outputSql){outputSql.innerHTML=sliderSql.value;sliderSql.oninput=function(){outputSql.innerHTML=this.value}}\n");
 		strcat(html, "$('form').submit(function (e) {\n");
 		strcat(html, "e.preventDefault();\n");
 		strcat(html, "var data = new FormData(e.currentTarget);\n");
