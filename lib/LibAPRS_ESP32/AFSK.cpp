@@ -1520,6 +1520,7 @@ extern int mVrms;
 extern float dBV;
 
 long mVsum = 0;
+volatile int16_t rxAdcMin = 32767, rxAdcMax = -32768; // SM0TGY: see the level meter
 int mVsumCount = 0;
 uint8_t dcd_cnt = 0;
 bool sqlActiveOld = false;
@@ -1735,6 +1736,11 @@ void AFSK_Poll(bool SA818, bool RFPower)
           //   break;
 
 #endif
+          // SM0TGY: raw ADC extremes for the live level meter (clipping check); reset by the reader
+          if (adc < rxAdcMin)
+            rxAdcMin = adc;
+          if (adc > rxAdcMax)
+            rxAdcMax = adc;
           tp->avg_sum += adc - tp->avg_buf[tp->avg_idx];
           tp->avg_buf[tp->avg_idx++] = adc;
           if (tp->avg_idx >= TCB_AVG_N)

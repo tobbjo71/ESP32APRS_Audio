@@ -11587,55 +11587,90 @@ void handle_ws_gnss(char *nmea, size_t size)
 	
 }
 
-// SM0TGY: TX test for setting up a radio. Keys PTT for 10 s with a steady tone
-// (m=1: 1200 Hz, m=2: 2200 Hz, m=3: alternating 1200/2200 Hz like AFSK), long
-// enough to measure PTT and to set the TX level (RV1). m=0 stops a running test.
+// SM0TGY: TX test for setting up a radio. Keys PTT until stopped (at most 180 s)
+// m=1: 1200 Hz, m=2: 2200 Hz, m=3: alternating 1200/2200 Hz like AFSK, m=4: PTT
+// without tone. Long enough to measure PTT and to set the TX level (RV1).
+// m=0 stops a running test; no m reports the state.
 extern int8_t _ptt_pin;
 extern bool _ptt_active;
+extern int mVrms;
+extern volatile int16_t rxAdcMin, rxAdcMax;
 static volatile uint32_t txTestUntil = 0;
+static volatile int txTestMode = 0;
 static TaskHandle_t txTestTask = NULL;
 static void txTestRun(void *arg)
 {
-	ModemTxTestStart((enum ModemTxTestMode)(uintptr_t)arg);
+	int m = (int)(uintptr_t)arg;
+	if (m == 4)
+		setPtt(true);
+	else
+		ModemTxTestStart((enum ModemTxTestMode)m);
 	while ((int32_t)(millis() - txTestUntil) < 0)
 		vTaskDelay(pdMS_TO_TICKS(50));
 	ModemTxTestStop();
+	txTestMode = 0;
 	txTestTask = NULL;
 	vTaskDelete(NULL);
+}
+
+static const char *txTestName(int m)
+{
+	return m == 1 ? "1200 Hz" : (m == 2 ? "2200 Hz" : (m == 3 ? "1200/2200 Hz" : "PTT only"));
 }
 
 void handle_txtest(AsyncWebServerRequest *request)
 {
 	if (!request->authenticate(config.http_username, config.http_password))
 		return request->requestAuthentication();
-	int m = request->hasArg("m") ? request->arg("m").toInt() : 0;
+	int m = request->hasArg("m") ? request->arg("m").toInt() : -1;
 	char msg[160];
 	if (m == 0)
 	{
 		txTestUntil = millis();
-		snprintf(msg, sizeof(msg), "TX test stopped");
+		snprintf(msg, sizeof(msg), "{\"on\":0,\"t\":\"Stopped\"}");
 	}
-	else if (m < 1 || m > 3)
+	else if (m >= 1 && m <= 4)
 	{
-		snprintf(msg, sizeof(msg), "Unknown test");
-	}
-	else if (txTestTask != NULL || getTransmit())
-	{
-		snprintf(msg, sizeof(msg), "Busy: transmitting already");
+		if (txTestTask != NULL || getTransmit())
+			snprintf(msg, sizeof(msg), "{\"on\":%d,\"t\":\"Busy: transmitting already\"}", txTestMode);
+		else
+		{
+			txTestUntil = millis() + 180000;
+			txTestMode = m;
+			if (xTaskCreatePinnedToCore(txTestRun, "txTest", 3072, (void *)(uintptr_t)m, 2, &txTestTask, 1) != pdPASS)
+			{
+				txTestTask = NULL;
+				txTestMode = 0;
+				snprintf(msg, sizeof(msg), "{\"on\":0,\"t\":\"Could not start\"}");
+			}
+			else
+				snprintf(msg, sizeof(msg), "{\"on\":%d,\"t\":\"TX ON: %s, PTT GPIO%d active %s\"}", m, txTestName(m), _ptt_pin, _ptt_active ? "HIGH" : "LOW");
+		}
 	}
 	else
 	{
-		txTestUntil = millis() + 10000;
-		if (xTaskCreatePinnedToCore(txTestRun, "txTest", 3072, (void *)(uintptr_t)m, 2, &txTestTask, 1) != pdPASS)
-		{
-			txTestTask = NULL;
-			snprintf(msg, sizeof(msg), "Could not start the test");
-		}
+		int left = txTestTask ? (int)((int32_t)(txTestUntil - millis()) / 1000) : 0;
+		if (txTestTask)
+			snprintf(msg, sizeof(msg), "{\"on\":%d,\"t\":\"TX ON: %s, stops by itself in %d s\"}", txTestMode, txTestName(txTestMode), left);
 		else
-			snprintf(msg, sizeof(msg), "TX test 10 s: %s, PTT GPIO%d active %s",
-					 m == 1 ? "1200 Hz" : (m == 2 ? "2200 Hz" : "1200/2200 Hz"), _ptt_pin, _ptt_active ? "HIGH" : "LOW");
+			snprintf(msg, sizeof(msg), "{\"on\":0,\"t\":\"Off\"}");
 	}
-	request->send(200, "text/plain", msg);
+	request->send(200, "application/json", msg);
+}
+
+// SM0TGY: live RX level (the modem's RMS over each block) and raw ADC extremes since
+// the last call, for setting RV2 against the receiver's noise with squelch open.
+void handle_rxlevel(AsyncWebServerRequest *request)
+{
+	int16_t lo = rxAdcMin, hi = rxAdcMax;
+	rxAdcMin = 32767;
+	rxAdcMax = -32768;
+	char msg[96];
+	if (hi < lo)
+		snprintf(msg, sizeof(msg), "{\"mv\":%d,\"lo\":-1,\"hi\":-1,\"tx\":%d}", mVrms, getTransmit() ? 1 : 0);
+	else
+		snprintf(msg, sizeof(msg), "{\"mv\":%d,\"lo\":%d,\"hi\":%d,\"tx\":%d}", mVrms, lo, hi, getTransmit() ? 1 : 0);
+	request->send(200, "application/json", msg);
 }
 
 void handle_test(AsyncWebServerRequest *request)
@@ -11670,7 +11705,7 @@ void handle_test(AsyncWebServerRequest *request)
 	// setHTML(6);
 
 	// Allocate memory for HTML content
-	char *webString = allocateStringMemory(8192); // Start with 8KB buffer
+	char *webString = allocateStringMemory(12288); // SM0TGY: level meter and TX test need more than 8 kB
 	if (!webString)
 	{
 		request->send(500, "text/html", "Memory allocation failed");
@@ -11687,13 +11722,18 @@ void handle_test(AsyncWebServerRequest *request)
 	strcat(webString, "document.getElementById('vrms').innerHTML=v.toFixed(3);document.getElementById('dbv').innerHTML=d.toFixed(1);\n");
 	strcat(webString, "var b=document.getElementById('bar');b.style.width=Math.round((d+40)/40*300)+'px';b.style.background=(d>-10)?'#c02316':(d>-20?'#00c000':'#e0b000');\n");
 	strcat(webString, "var t=document.getElementById('raw_txt');t.value+=new Date(Number(j.timeStamp)*1000).toISOString()+' ['+v.toFixed(3)+' Vrms, '+d.toFixed(1)+' dBV]\\n'+atob(j.RAW)+'\\n';t.scrollTop=t.scrollHeight;};}\n");
-	strcat(webString, "function tt(m){document.getElementById('tts').textContent='...';fetch('/txtest?m='+m).then(function(r){return r.text()}).then(function(t){document.getElementById('tts').textContent=t}).catch(function(){document.getElementById('tts').textContent='No answer'})}\n");
+	strcat(webString, "var TT=0;function ts(j){TT=j.on;document.getElementById('tts').textContent=j.t;for(var i=1;i<5;i++){var e=document.getElementById('tb'+i);e.style.background=(TT==i)?'#c02316':'';e.style.color=(TT==i)?'#fff':''}}\n");
+	strcat(webString, "function tt(m){fetch('/txtest?m='+(TT==m?0:(TT?0:m))).then(function(r){return r.json()}).then(ts).catch(function(){document.getElementById('tts').textContent='No answer'})}\n");
+	strcat(webString, "function lv(){fetch('/rxlevel').then(function(r){return r.json()}).then(function(j){var v=j.mv/1000,d=20*Math.log10(v);if(!isFinite(d)||d<-60)d=-60;document.getElementById('lv').textContent=j.tx?'TX':v.toFixed(3);document.getElementById('ld').textContent=j.tx?'-':d.toFixed(1);\n");
+	strcat(webString, "var c=(j.lo>=0&&(j.lo<40||j.hi>4055));document.getElementById('la').textContent=j.lo<0?'-':(j.lo+'..'+j.hi+(c?' CLIP':''));var b=document.getElementById('lbar');b.style.width=Math.round((d+60)/60*300)+'px';b.style.background=c||d>-10?'#c02316':(d>-20?'#00c000':'#e0b000')}).catch(function(){}).then(function(){setTimeout(lv,300)})}\n");
+	strcat(webString, "function tq(){fetch('/txtest').then(function(r){return r.json()}).then(ts).catch(function(){}).then(function(){setTimeout(tq,2000)})}\n");
 	strcat(webString, "</script>\n");
 	strcat(webString, "</head><body>\n<table>\n");
 	strcat(webString, "<tr><td><div style=\"margin:10px\"><b>RX audio level (last packet)</b><br />Vrms: <span id=\"vrms\">-</span> &nbsp; dBV: <span id=\"dbv\">-</span><div id=\"barbox\"><div id=\"bar\"></div></div><small>-40 dBV ... 0 dBV. Green -20..-10 dBV, red above -10 dBV.</small></div></td></tr>\n");
-	strcat(webString, "<tr><td><div style=\"margin:10px\"><b>TX test (10 s)</b><br /><button onclick=\"tt(1)\">1200 Hz</button> <button onclick=\"tt(2)\">2200 Hz</button> <button onclick=\"tt(3)\">1200/2200 Hz</button> <button onclick=\"tt(0)\">Stop</button><br /><span id=\"tts\"></span><br /><small>Keys the radio for 10 s with a steady tone: measure PTT, set the TX level with RV1. Use a dummy load or low power.</small></div></td></tr>\n");
+	strcat(webString, "<tr><td><div style=\"margin:10px\"><b>RX level live</b> (squelch open: noise)<br />Vrms: <span id=\"lv\">-</span> &nbsp; dBV: <span id=\"ld\">-</span> &nbsp; ADC: <span id=\"la\">-</span><div id=\"barbox\"><div id=\"lbar\" style=\"height:18px;width:0\"></div></div><small>ADC raw 0..4095; CLIP means the input is overdriven: turn RV2 or the radio volume down.</small></div></td></tr>\n");
+	strcat(webString, "<tr><td><div style=\"margin:10px\"><b>TX test</b> (on until pressed again, at most 180 s)<br /><button id=\"tb4\" onclick=\"tt(4)\">PTT</button> <button id=\"tb1\" onclick=\"tt(1)\">1200 Hz</button> <button id=\"tb2\" onclick=\"tt(2)\">2200 Hz</button> <button id=\"tb3\" onclick=\"tt(3)\">1200/2200 Hz</button><br /><b><span id=\"tts\"></span></b><br /><small>Keys the radio: measure PTT, set the TX level with RV1. Use a dummy load or low power.</small></div></td></tr>\n");
 	strcat(webString, "<tr><td><div style=\"margin: 15px;\">Terminal<br /><textarea id=\"raw_txt\" name=\"raw_txt\" rows=\"50\" cols=\"80\" /></textarea></div></td></tr>\n");
-	strcat(webString, "</table>\n<script>vu();</script>\n");
+	strcat(webString, "</table>\n<script>vu();lv();tq();</script>\n");
 
 	strcat(webString, "</body></html>\n");
 
@@ -12468,6 +12508,8 @@ void webService()
 					{ handle_wireless(request); });
 	async_server.on("/txtest", HTTP_GET, [](AsyncWebServerRequest *request)
 					{ handle_txtest(request); });
+	async_server.on("/rxlevel", HTTP_GET, [](AsyncWebServerRequest *request)
+					{ handle_rxlevel(request); });
 	async_server.on("/tnc2", HTTP_GET, [](AsyncWebServerRequest *request)
 					{ handle_test(request); });
 	async_server.on("/gnss", HTTP_GET, [](AsyncWebServerRequest *request)
