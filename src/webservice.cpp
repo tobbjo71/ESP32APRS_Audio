@@ -11630,7 +11630,7 @@ void handle_txtest(AsyncWebServerRequest *request)
 	request->send(200, "application/json", msg);
 }
 
-// SM0TGY: live RX level (the modem's RMS over each block) and raw ADC extremes since
+// SM0TGY: live RX level (the modem's RMS over each block, mV) and the input extremes in mV since
 // the last call, for setting RV2 against the receiver's noise with squelch open.
 void handle_rxlevel(AsyncWebServerRequest *request)
 {
@@ -11697,12 +11697,12 @@ void handle_test(AsyncWebServerRequest *request)
 	strcat(webString, "var TT=0;function ts(j){TT=j.on;document.getElementById('tts').textContent=j.t;for(var i=1;i<5;i++){var e=document.getElementById('tb'+i);e.style.background=(TT==i)?'#c02316':'';e.style.color=(TT==i)?'#fff':''}}\n");
 	strcat(webString, "function tt(m){fetch('/txtest?m='+(TT==m?0:(TT?0:m))).then(function(r){return r.json()}).then(ts).catch(function(){document.getElementById('tts').textContent='No answer'})}\n");
 	strcat(webString, "function lv(){fetch('/rxlevel').then(function(r){return r.json()}).then(function(j){var v=j.mv/1000,d=20*Math.log10(v);if(!isFinite(d)||d<-60)d=-60;document.getElementById('lv').textContent=j.tx?'TX':v.toFixed(3);document.getElementById('ld').textContent=j.tx?'-':d.toFixed(1);\n");
-	strcat(webString, "var c=(j.lo>=0&&(j.lo<40||j.hi>4055));document.getElementById('la').textContent=j.lo<0?'-':(j.lo+'..'+j.hi+(c?' CLIP':''));var b=document.getElementById('lbar');b.style.width=Math.round((d+60)/60*300)+'px';b.style.background=c||d>-10?'#c02316':(d>-20?'#00c000':'#e0b000')}).catch(function(){}).then(function(){setTimeout(lv,300)})}\n");
+	strcat(webString, "var c=(j.lo>=0&&(j.lo<20||j.hi>930));document.getElementById('la').textContent=j.lo<0?'-':(j.lo+'..'+j.hi+(c?' CLIP':''));var b=document.getElementById('lbar');b.style.width=Math.round((d+60)/60*300)+'px';b.style.background=c||d>-10?'#c02316':(d>-20?'#00c000':'#e0b000')}).catch(function(){}).then(function(){setTimeout(lv,300)})}\n");
 	strcat(webString, "function tq(){fetch('/txtest').then(function(r){return r.json()}).then(ts).catch(function(){}).then(function(){setTimeout(tq,2000)})}\n");
 	strcat(webString, "</script>\n");
 	strcat(webString, "</head><body>\n<table>\n");
 	strcat(webString, "<tr><td><div style=\"margin:10px\"><b>RX audio level (last packet)</b><br />Vrms: <span id=\"vrms\">-</span> &nbsp; dBV: <span id=\"dbv\">-</span><div id=\"barbox\"><div id=\"bar\"></div></div><small>-40 dBV ... 0 dBV. Green -20..-10 dBV, red above -10 dBV.</small></div></td></tr>\n");
-	strcat(webString, "<tr><td><div style=\"margin:10px\"><b>RX level live</b> (squelch open: noise)<br />Vrms: <span id=\"lv\">-</span> &nbsp; dBV: <span id=\"ld\">-</span> &nbsp; ADC: <span id=\"la\">-</span><div id=\"barbox\"><div id=\"lbar\" style=\"height:18px;width:0\"></div></div><small>ADC raw 0..4095; CLIP means the input is overdriven: turn RV2 or the radio volume down.</small></div></td></tr>\n");
+	strcat(webString, "<tr><td><div style=\"margin:10px\"><b>RX level live</b> (squelch open: noise)<br />Vrms: <span id=\"lv\">-</span> &nbsp; dBV: <span id=\"ld\">-</span> &nbsp; Input: <span id=\"la\">-</span> mV<div id=\"barbox\"><div id=\"lbar\" style=\"height:18px;width:0\"></div></div><small>Input = lowest..highest voltage at GPIO36 since the last reading (ADC range about 0..950 mV). CLIP means the input is overdriven: turn RV2 or the radio volume down.</small></div></td></tr>\n");
 	strcat(webString, "<tr><td><div style=\"margin:10px\"><b>TX test</b> (on until pressed again, at most 180 s)<br /><button id=\"tb4\" onclick=\"tt(4)\">PTT</button> <button id=\"tb1\" onclick=\"tt(1)\">1200 Hz</button> <button id=\"tb2\" onclick=\"tt(2)\">2200 Hz</button> <button id=\"tb3\" onclick=\"tt(3)\">1200/2200 Hz</button><br /><b><span id=\"tts\"></span></b><br /><small>Keys the radio: measure PTT, set the TX level with RV1. Use a dummy load or low power.</small></div></td></tr>\n");
 	strcat(webString, "<tr><td><div style=\"margin: 15px;\">Terminal<br /><textarea id=\"raw_txt\" name=\"raw_txt\" rows=\"50\" cols=\"80\" /></textarea></div></td></tr>\n");
 	strcat(webString, "</table>\n<script>vu();lv();tq();</script>\n");
