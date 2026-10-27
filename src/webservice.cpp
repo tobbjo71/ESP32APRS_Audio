@@ -13,6 +13,7 @@
 #include "wireguard_vpn.h"
 #include <LibAPRSesp.h>
 #include "modem.h"
+#include "AX25.h"
 #include "driver/gpio.h"
 #include <parse_aprs.h>
 #include "jquery_min_js.h"
@@ -11686,6 +11687,31 @@ void handle_rxlevel(AsyncWebServerRequest *request)
 	request->send(200, "application/json", msg);
 }
 
+// SM0TGY: the last frames the decoder finished (good or bad CRC), newest first
+void handle_rxlog(AsyncWebServerRequest *request)
+{
+	char *out = allocateStringMemory(3072);
+	if (!out)
+	{
+		request->send(500, "text/plain", "no memory");
+		return;
+	}
+	uint32_t n = ax25DiagLogN, now = millis();
+	strcpy(out, "[");
+	for (uint32_t k = 0; k < AX25_DIAG_LOG && k < n; k++)
+	{
+		const Ax25DiagEntry *e = &ax25DiagLog[(n - 1 - k) % AX25_DIAG_LOG];
+		char row[112];
+		snprintf(row, sizeof(row), "%s{\"ago\":%lu,\"m\":%u,\"len\":%u,\"ok\":%d,\"mv\":%u,\"pk\":%d,\"va\":%d,\"lv\":%u}",
+				 k ? "," : "", (unsigned long)((now - e->ms) / 1000), e->modem, e->len, e->ok ? 1 : 0, e->mV, e->peak, e->valley, e->level);
+		strlcat(out, row, 3072);
+	}
+	strlcat(out, "]", 3072);
+	AsyncWebServerResponse *r = beginBufferResponse(request, out);
+	r->addHeader("Cache-Control", "no-cache");
+	request->send(r);
+}
+
 // SM0TGY: radio set-up page (More -> Radio level and TX test), loaded into the app shell.
 // Live RX level for RV2 (/rxlevel), level of the last decoded packet (WebSocket), and the
 // TX test (/txtest). Leaving the page stops the polling and any running TX test.
@@ -11694,22 +11720,25 @@ static const char UI_RADIOTEST[] PROGMEM = R"HTML(<h2 class="pg">Radio level and
 <div class="lvl"><div style="height:12px"><b id="lbar" style="height:12px;width:0"></b></div></div><span id="la">Input &ndash; mV</span><span class="mono" id="ldx" style="display:block"></span></div>
 <p class="muted">The decoder listens only above 0.010 Vrms (&minus;40 dBV). Flags: HDLC flags seen (each packet starts with many). Frames with bad CRC: tones heard but bits wrong (level or distortion). Counters run from start-up. Input range at GPIO36 is about 0&hellip;950 mV; CLIP means overdriven: turn RV2 or the radio volume down.</p>
 <div class="tile" style="margin-bottom:8px"><small>Last received packet</small><b class="mono" id="pk">&ndash;</b><span class="mono" id="pr" style="word-break:break-all"></span></div>
+<div class="gh">Decoder log &middot; last frames, newest first</div>
+<div class="tile" style="margin-bottom:8px;overflow-x:auto"><table class="mono" style="font-size:12px;margin:0"><thead><tr><th>s ago</th><th>demod</th><th>bytes</th><th>CRC</th><th>Vrms</th><th>peak/valley/level</th></tr></thead><tbody id="rlog"><tr><td colspan="6">&ndash;</td></tr></tbody></table></div>
 <div class="gh">TX test</div>
 <div class="seg"><button type="button" id="tb4" onclick="tt(4)">PTT</button><button type="button" id="tb1" onclick="tt(1)">1200 Hz</button><button type="button" id="tb2" onclick="tt(2)">2200 Hz</button><button type="button" id="tb3" onclick="tt(3)">1200/2200 Hz</button></div>
 <p><b id="tts">&ndash;</b></p>
 <p class="muted">A button stays on until it is pressed again, at most 180 s; leaving this page stops it. It keys the radio: measure PTT, set the TX level with RV1. Use a dummy load or low power.</p>
-<script>(function(){var stopped=false,TT=0,ws=null,t1=null,t2=null;function E(i){return document.getElementById(i)}
+<script>(function(){var stopped=false,TT=0,ws=null,t1=null,t2=null,t3=null;function E(i){return document.getElementById(i)}
 function ts(j){TT=j.on;E('tts').textContent=j.t;for(var i=1;i<5;i++){var b=E('tb'+i);b.style.background=TT==i?'var(--red)':'';b.style.color=TT==i?'#fff':'';b.style.borderColor=TT==i?'var(--red)':''}}
 window.tt=function(m){fetch('/txtest?m='+(TT?0:m)).then(function(r){return r.json()}).then(ts).catch(function(){E('tts').textContent='No answer'})};
 function lv(){if(stopped)return;fetch('/rxlevel').then(function(r){return r.json()}).then(function(j){var v=j.mv/1000,d=20*Math.log10(v);if(!isFinite(d)||d<-60)d=-60;
 var c=(j.lo>=0&&(j.lo<20||j.hi>930));E('lv').textContent=j.tx?'TX':(v.toFixed(3)+' Vrms · '+d.toFixed(1)+' dBV');
 E('la').textContent='Input '+(j.lo<0?'–':(j.lo+'…'+j.hi))+' mV'+(c?' · CLIP':'');if(j.sps!==undefined)E('ldx').textContent='Samples/s '+j.sps+' \u00b7 decoder '+(j.dcd?'on':'off')+' \u00b7 flags '+j.fl+' \u00b7 frames ok '+j.ok+' / bad CRC '+j.bad;var b=E('lbar');b.style.width=Math.round((d+60)/60*100)+'%';b.style.background=c||d>-10?'var(--red)':(d>-40?'var(--o5)':'var(--och)')}).catch(function(){}).then(function(){if(!stopped)t1=setTimeout(lv,300)})}
+function rl(){if(stopped)return;fetch('/rxlog').then(function(r){return r.json()}).then(function(a){var h='';a.forEach(function(e){h+='<tr><td>'+e.ago+'</td><td>'+e.m+'</td><td>'+e.len+'</td><td>'+(e.ok?'ok':'<b style="color:var(--red)">bad</b>')+'</td><td>'+(e.mv/1000).toFixed(3)+'</td><td>'+e.pk+' / '+e.va+' / '+e.lv+'</td></tr>'});E('rlog').innerHTML=h||'<tr><td colspan="6">No frames yet</td></tr>'}).catch(function(){}).then(function(){if(!stopped)t3=setTimeout(rl,2000)})}
 function tq(){if(stopped)return;fetch('/txtest').then(function(r){return r.json()}).then(ts).catch(function(){}).then(function(){if(!stopped)t2=setTimeout(tq,2000)})}
 function live(){if(stopped)return;ws=new WebSocket('ws://'+location.hostname+':81/ws');ws.onclose=function(){if(!stopped)setTimeout(live,3000)};
 ws.onmessage=function(e){var j;try{j=JSON.parse(e.data)}catch(x){return}if(parseInt(j.Active)!=1||j.Dir=='TX')return;var v=parseFloat(j.mVrms)/1000,d=20*Math.log10(v);
 E('pk').textContent=isFinite(d)?(v.toFixed(3)+' Vrms · '+d.toFixed(1)+' dBV'):'–';try{E('pr').textContent=atob(j.RAW)}catch(x){}}}
-window.pageStop=function(){stopped=true;clearTimeout(t1);clearTimeout(t2);try{if(ws)ws.close()}catch(e){}if(TT)fetch('/txtest?m=0')};
-lv();tq();live()})();</script>
+window.pageStop=function(){stopped=true;clearTimeout(t1);clearTimeout(t2);clearTimeout(t3);try{if(ws)ws.close()}catch(e){}if(TT)fetch('/txtest?m=0')};
+lv();tq();rl();live()})();</script>
 )HTML";
 
 void handle_test(AsyncWebServerRequest *request)
@@ -12534,6 +12563,8 @@ void webService()
 					{ handle_txtest(request); });
 	async_server.on("/rxlevel", HTTP_GET, [](AsyncWebServerRequest *request)
 					{ handle_rxlevel(request); });
+	async_server.on("/rxlog", HTTP_GET, [](AsyncWebServerRequest *request)
+					{ handle_rxlog(request); });
 	async_server.on("/tnc2", HTTP_GET, [](AsyncWebServerRequest *request)
 					{ handle_test(request); });
 	async_server.on("/gnss", HTTP_GET, [](AsyncWebServerRequest *request)
