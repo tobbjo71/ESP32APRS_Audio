@@ -64,6 +64,7 @@
 #endif
 
 #include "AFSK.h"
+static void taskHeartbeat(void *); // SM0TGY 2.17
 
 #ifdef PPPOS
 #include <PPP.h>
@@ -3864,6 +3865,7 @@ void setup()
     Serial.println();
     Serial.println("Start SM0TGY APRS Tracker v" FORK_VERSION " (ESP32APRS_Audio V" + String(VERSION) + String(VERSION_BUILD) + ")");
     Serial.println("Push BOOT after 3 sec for Factory Default config.");
+    xTaskCreatePinnedToCore(taskHeartbeat, "taskHB", 3072, NULL, 1, NULL, 0); // SM0TGY 2.17: starts early, so a hang in setup shows too
 
 // if (!EEPROM.begin(EEPROM_SIZE))
 // {
@@ -4361,6 +4363,8 @@ void setup()
             &taskSensorHandle, /* Task handle. */
             0);                /* Core where the task should run */
     }
+
+    Serial.println("SM0TGY: setup done"); // 2.17
 
     upTimeStamp = millis() / 1000;
     autoResetTimeout = millis() + ((long)config.reset_timeout * 60000);
@@ -5561,8 +5565,44 @@ void msgBox(String msg)
 
 uint8_t heapCount = 0;
 void diagHeapTick(); // SM0TGY: webservice.cpp
+// SM0TGY 2.17: one status line every 5 s on the serial port, from a task on core 0.
+// Shows which task stops counting and whether memory runs out when the board hangs.
+volatile uint32_t hbLoop = 0, hbAprs = 0, hbPoll = 0, hbNet = 0;
+extern volatile uint32_t adcIsrCount;
+extern volatile bool hw_afsk_dac_isr;
+#if FORK_AUDIO_DMA
+extern volatile uint32_t afskTxDmaRuns, afskTxDmaErr;
+#endif
+static void taskHeartbeat(void *)
+{
+    uint32_t lastAdc = adcIsrCount, lastT = millis();
+    for (;;)
+    {
+        vTaskDelay(pdMS_TO_TICKS(5000));
+        uint32_t now = millis(), a = adcIsrCount;
+        uint32_t sps = (now != lastT) ? (uint32_t)((uint64_t)(a - lastAdc) * 1000 / (now - lastT)) : 0;
+        lastAdc = a;
+        lastT = now;
+        Serial.printf("HB %lus int %u min %u blk %u ps %u | loop %lu aprs %lu poll %lu net %lu | sps %lu tx %d",
+                      (unsigned long)(now / 1000),
+                      (unsigned)heap_caps_get_free_size(MALLOC_CAP_INTERNAL),
+                      (unsigned)heap_caps_get_minimum_free_size(MALLOC_CAP_INTERNAL),
+                      (unsigned)heap_caps_get_largest_free_block(MALLOC_CAP_INTERNAL),
+                      (unsigned)heap_caps_get_free_size(MALLOC_CAP_SPIRAM),
+                      (unsigned long)hbLoop, (unsigned long)hbAprs, (unsigned long)hbPoll, (unsigned long)hbNet,
+                      (unsigned long)sps, (int)hw_afsk_dac_isr);
+#if FORK_AUDIO_DMA
+        Serial.printf(" dma %lu/%lu", (unsigned long)afskTxDmaRuns, (unsigned long)afskTxDmaErr);
+#endif
+        if (hbNet == 0) // network task not running yet: leave Wi-Fi alone
+            Serial.println(" | net not started");
+        else
+            Serial.printf(" | sta %d ip %s ap %d\n", (int)WiFi.status(), WiFi.localIP().toString().c_str(), (int)WiFi.softAPgetStationNum());
+    }
+}
 void loop()
 {
+    hbLoop++; // SM0TGY 2.17: serial heartbeat
     static unsigned long heapTickT = 0;
     if (millis() - heapTickT >= 1000)
     {
@@ -6950,6 +6990,7 @@ void taskAPRS(void *pvParameters)
     log_d("Task APRS has been start");
     for (;;)
     {
+        hbAprs++; // SM0TGY 2.17: serial heartbeat
 
         if (adcEn == 1)
         {
@@ -8448,6 +8489,7 @@ void taskAPRSPoll(void *pvParameters)
 
     for (;;)
     {
+        hbPoll++; // SM0TGY 2.17: serial heartbeat
         if (config.modem_type == 3)
             vTaskDelay(1 / portTICK_PERIOD_MS);
         else
@@ -8929,6 +8971,7 @@ void taskNetwork(void *pvParameters)
 
     for (;;)
     {
+        hbNet++; // SM0TGY 2.17: serial heartbeat
         unsigned long now = millis();
         timeNetwork = now - timeNetworkOld;
         timeNetworkOld = now;
