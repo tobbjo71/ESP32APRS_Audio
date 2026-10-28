@@ -10937,6 +10937,7 @@ void handle_wireless(AsyncWebServerRequest *request)
 
 	if (request->hasArg("commitWiFiAP"))
 	{
+		Serial.println("SM0TGY: Wi-Fi AP apply: start"); // 2.20 trace
 		bool wifiAP = false;
 		for (uint8_t i = 0; i < request->args(); i++)
 		{
@@ -10974,10 +10975,13 @@ void handle_wireless(AsyncWebServerRequest *request)
 		{
 			config.wifi_mode &= ~WIFI_AP_FIX;
 		}
+		Serial.println("SM0TGY: Wi-Fi AP apply: saving");
 		saveConfig(request);
+		Serial.println("SM0TGY: Wi-Fi AP apply: saved");
 	}
 	else if (request->hasArg("commitWiFiClient"))
 	{
+		Serial.printf("SM0TGY: Wi-Fi client apply: start, %d args\n", (int)request->args()); // 2.20 trace
 		bool wifiSTA = false;
 		for (int n = 0; n < 5; n++)
 			config.wifi_sta[n].enable = false;
@@ -11031,8 +11035,7 @@ void handle_wireless(AsyncWebServerRequest *request)
 				{
 					if (isValidNumber(request->arg(i)))
 					{
-						config.wifi_power = (int8_t)request->arg(i).toInt();
-						WiFi.setTxPower((wifi_power_t)config.wifi_power);
+						config.wifi_power = (int8_t)request->arg(i).toInt(); // SM0TGY 2.20: applied by the network task on reload, not from the web task
 					}
 				}
 			}
@@ -11045,7 +11048,9 @@ void handle_wireless(AsyncWebServerRequest *request)
 		{
 			config.wifi_mode &= ~WIFI_STA_FIX;
 		}
+		Serial.printf("SM0TGY: Wi-Fi client apply: saving, mode %d, st1 %d\n", (int)config.wifi_mode, (int)config.wifi_sta[0].enable);
 		saveConfig(request);
+		Serial.println("SM0TGY: Wi-Fi client apply: saved");
 		wifiReloadRequest = true; // SM0TGY: network task picks up the new list
 	}
 	#ifdef BLUETOOTH
@@ -11212,7 +11217,7 @@ void handle_wireless(AsyncWebServerRequest *request)
 		String wifiClientEnFlag = "";
 		if (config.wifi_mode & WIFI_STA_FIX)
 			wifiClientEnFlag = "checked";
-		snprintf(tempHtml, sizeof(tempHtml), "<td style=\"text-align: left;\"><label class=\"switch\"><input type=\"checkbox\" name=\"wificlient\" value=\"OK\" %s><span class=\"slider round\"></span></label></td>\n", wifiClientEnFlag);
+		snprintf(tempHtml, sizeof(tempHtml), "<td style=\"text-align: left;\"><label class=\"switch\"><input type=\"checkbox\" name=\"wificlient\" value=\"OK\" %s><span class=\"slider round\"></span></label></td>\n", wifiClientEnFlag.c_str()); // SM0TGY 2.20: was the String object itself
 		strcat(html, tempHtml);
 		strcat(html, "</tr>\n");
 		strcat(html, "<tr>\n");

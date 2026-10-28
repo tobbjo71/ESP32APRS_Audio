@@ -9053,17 +9053,24 @@ void taskNetwork(void *pvParameters)
         {
             // SM0TGY: Wi-Fi client list changed on the web page; use it without a restart
             wifiReloadRequest = false;
+            Serial.println("SM0TGY: Wi-Fi reload: start"); // 2.20 trace
             if ((config.wifi_mode & WIFI_STA_FIX) && !(WiFi.getMode() & WIFI_MODE_STA))
                 WiFi.mode((config.wifi_mode & WIFI_AP_FIX) ? WIFI_MODE_APSTA : WIFI_MODE_STA);
+            WiFi.setTxPower((wifi_power_t)config.wifi_power); // SM0TGY 2.20: moved here from the web handler
             wifiMulti.APlistClean();
+            int nSta = 0;
             for (int i = 0; i < 5; i++)
                 if (config.wifi_sta[i].enable)
+                {
                     wifiMulti.addAP(config.wifi_sta[i].wifi_ssid, config.wifi_sta[i].wifi_pass);
+                    nSta++;
+                }
             currentAPIndex = -1;
             mitiWifiTimeout = millis() + 30000;
-            if (config.wifi_mode & WIFI_STA_FIX)
+            Serial.printf("SM0TGY: Wi-Fi reload: %d stations, connecting\n", nSta);
+            if ((config.wifi_mode & WIFI_STA_FIX) && nSta > 0)
                 wifiMulti.run(8000); // one attempt now, even with clients on the own AP
-            log_d("WiFi client list reloaded");
+            Serial.println("SM0TGY: Wi-Fi reload: done");
         }
         // SM0TGY: STA reconnect, also while someone uses the own AP (upstream skipped it then
         // and relied on reconnects from the event handler, see ARDUINO_EVENT_WIFI_STA_DISCONNECTED).

@@ -550,6 +550,7 @@ bool saveConfiguration(const char *filename, const Configuration &config)
     doc["msgInterval"] = config.msg_interval;
 
     // Serialize JSON to file
+    Serial.printf("SM0TGY: config save: open, %u B\n", (unsigned)measureJson(doc)); // 2.20 trace
     File file = LITTLEFS.open(filename, FILE_WRITE);
     if (file)
     {
@@ -565,8 +566,10 @@ bool saveConfiguration(const char *filename, const Configuration &config)
         }else{
             log_d("Write file configuration susses.");
         }
+        Serial.println("SM0TGY: config save: written, closing");
         // Close the file
         file.close();
+        Serial.println("SM0TGY: config save: closed");
         delay(100);
         //adcEn=1;
         dacEn=0;
