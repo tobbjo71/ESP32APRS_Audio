@@ -1014,7 +1014,7 @@ void handle_diag(AsyncWebServerRequest *request)
 		extern volatile int32_t clkSetLastDelta, clkSetMaxDelta;
 		extern volatile uint8_t clkSetLastSrc;
 		extern TinyGPSPlus gps;
-		static const char *srcName[] = {"-", "tracker log", "IGate log", "digi log", "WX log", "GPS sync"};
+		static const char *srcName[] = {"-", "tracker log", "IGate log", "digi log", "WX log", "GPS sync", "NTP"};
 		char row[260];
 		time_t nowT = time(NULL);
 		struct tm u;
@@ -1026,8 +1026,8 @@ void handle_diag(AsyncWebServerRequest *request)
 			snprintf(row, sizeof(row), "<tr><td>Clock (UTC) / GPS time</td><td>%02d:%02d:%02d / no GPS time</td></tr>\n", u.tm_hour, u.tm_min, u.tm_sec);
 		strlcat(html, row, cap);
 		if (clkSetCount)
-			snprintf(row, sizeof(row), "<tr><td>Clock set</td><td>%lu times; last by %s at uptime %lu s, by %+ld s; largest change %+ld s</td></tr>\n",
-					 (unsigned long)clkSetCount, srcName[clkSetLastSrc < 6 ? clkSetLastSrc : 0], (unsigned long)clkSetLastUp, (long)clkSetLastDelta, (long)clkSetMaxDelta);
+			snprintf(row, sizeof(row), "<tr><td>Clock set</td><td>%lu times; last by %s at uptime %lu s, by %+ld s; largest change %+ld s (once per 24 h; NTP first if Wi-Fi)</td></tr>\n",
+					 (unsigned long)clkSetCount, srcName[clkSetLastSrc < 7 ? clkSetLastSrc : 0], (unsigned long)clkSetLastUp, (long)clkSetLastDelta, (long)clkSetMaxDelta);
 		else
 			snprintf(row, sizeof(row), "<tr><td>Clock set</td><td>not since start</td></tr>\n");
 		strlcat(html, row, cap);

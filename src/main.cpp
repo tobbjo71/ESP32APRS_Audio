@@ -7,6 +7,7 @@
  Support in LINE Group APRS Only
 */
 
+#include "esp_sntp.h" // SM0TGY 2.35
 #include <Arduino.h>
 #include <AsyncTCP.h>
 #include <esp_task_wdt.h>
@@ -986,15 +987,40 @@ String deg2lon(double deg)
 volatile uint32_t clkSetCount = 0, clkSetLastUp = 0;
 volatile int32_t clkSetLastDelta = 0, clkSetMaxDelta = 0;
 volatile uint8_t clkSetLastSrc = 0;
-void forkClockNote(time_t newUtc, uint8_t src)
+void forkClockNoteDelta(int32_t d, uint8_t src)
 {
-    int32_t d = (int32_t)(newUtc - time(NULL));
     clkSetCount++;
     clkSetLastDelta = d;
     if (abs(d) > abs(clkSetMaxDelta))
         clkSetMaxDelta = d;
     clkSetLastSrc = src;
     clkSetLastUp = millis() / 1000;
+}
+void forkClockNote(time_t newUtc, uint8_t src)
+{
+    forkClockNoteDelta((int32_t)(newUtc - time(NULL)), src);
+}
+
+// SM0TGY 2.35 (Tobias 2026-10-28: set the clock once per day, not every 10 s).
+// GPS (src 1-5) may set the clock only if nothing has set it within 24 h; NTP (src 6) once per 24 h.
+// NTP is preferred: it is tried first after Wi-Fi connects, and the GPS then finds the clock already set.
+static bool clkEverSet = false, clkEverNtp = false;
+static uint32_t clkLastSetMs = 0, clkLastNtpMs = 0;
+bool forkClockDue(uint8_t src)
+{
+    if (src == 6)
+        return !clkEverNtp || (uint32_t)(millis() - clkLastNtpMs) >= 86400000UL;
+    return !clkEverSet || (uint32_t)(millis() - clkLastSetMs) >= 86400000UL;
+}
+void forkClockDone(uint8_t src)
+{
+    clkEverSet = true;
+    clkLastSetMs = millis();
+    if (src == 6)
+    {
+        clkEverNtp = true;
+        clkLastNtpMs = clkLastSetMs;
+    }
 }
 
 // SM0TGY 2.33: "Send beacon now" from the web pages; handled by taskAPRS when the tracker is on
@@ -1121,7 +1147,7 @@ void logTracker(double lat, double lon, double speed, double course)
         time_t timeGps = getGpsTime(); // Local gps time
         time(&nowTime);
         int tdiff = abs((long)((timeGps - (time_t)(tzOffsetNow() * SECS_PER_HOUR)) - nowTime)); // SM0TGY 2.25: timeGps is local, nowTime UTC (was always ~1 h apart, so the clock was reset on every log line)
-        if (timeGps > 1700000000 && tdiff > 2) // && timeGps < 2347462800)
+        if (timeGps > 1700000000 && tdiff > 2 && forkClockDue(1)) // SM0TGY 2.35: once per 24 h
         {
             nowTime = timeGps;
             setTime(nowTime);
@@ -1129,6 +1155,7 @@ void logTracker(double lat, double lon, double speed, double course)
             timeval tv = {rtc, 0};
             timezone tz = {(int)(tzOffsetNow() * (float)SECS_PER_HOUR), 0};
             forkClockNote(tv.tv_sec, 1); // SM0TGY 2.33: clock diagnostics
+            forkClockDone(1);
             settimeofday(&tv, &tz);
         }
     }
@@ -1263,7 +1290,7 @@ void logIGate(double lat, double lon, double speed, double course)
         time_t timeGps = getGpsTime(); // Local gps time
         time(&nowTime);
         int tdiff = abs((long)((timeGps - (time_t)(tzOffsetNow() * SECS_PER_HOUR)) - nowTime)); // SM0TGY 2.25: timeGps is local, nowTime UTC (was always ~1 h apart, so the clock was reset on every log line)
-        if (timeGps > 1700000000 && tdiff > 2) // && timeGps < 2347462800)
+        if (timeGps > 1700000000 && tdiff > 2 && forkClockDue(2)) // SM0TGY 2.35: once per 24 h
         {
             nowTime = timeGps;
             setTime(nowTime);
@@ -1271,6 +1298,7 @@ void logIGate(double lat, double lon, double speed, double course)
             timeval tv = {rtc, 0};
             timezone tz = {(int)(tzOffsetNow() * (float)SECS_PER_HOUR), 0};
             forkClockNote(tv.tv_sec, 2); // SM0TGY 2.33: clock diagnostics
+            forkClockDone(2);
             settimeofday(&tv, &tz);
         }
     }
@@ -1396,7 +1424,7 @@ void logDigi(double lat, double lon, double speed, double course)
         time_t timeGps = getGpsTime(); // Local gps time
         time(&nowTime);
         int tdiff = abs((long)((timeGps - (time_t)(tzOffsetNow() * SECS_PER_HOUR)) - nowTime)); // SM0TGY 2.25: timeGps is local, nowTime UTC (was always ~1 h apart, so the clock was reset on every log line)
-        if (timeGps > 1700000000 && tdiff > 2) // && timeGps < 2347462800)
+        if (timeGps > 1700000000 && tdiff > 2 && forkClockDue(3)) // SM0TGY 2.35: once per 24 h
         {
             nowTime = timeGps;
             setTime(nowTime);
@@ -1404,6 +1432,7 @@ void logDigi(double lat, double lon, double speed, double course)
             timeval tv = {rtc, 0};
             timezone tz = {(int)(tzOffsetNow() * (float)SECS_PER_HOUR), 0};
             forkClockNote(tv.tv_sec, 3); // SM0TGY 2.33: clock diagnostics
+            forkClockDone(3);
             settimeofday(&tv, &tz);
         }
     }
@@ -1529,7 +1558,7 @@ void logWeather(double lat, double lon, double speed, double course)
         time_t timeGps = getGpsTime(); // Local gps time
         time(&nowTime);
         int tdiff = abs((long)((timeGps - (time_t)(tzOffsetNow() * SECS_PER_HOUR)) - nowTime)); // SM0TGY 2.25: timeGps is local, nowTime UTC (was always ~1 h apart, so the clock was reset on every log line)
-        if (timeGps > 1700000000 && tdiff > 2) // && timeGps < 2347462800)
+        if (timeGps > 1700000000 && tdiff > 2 && forkClockDue(4)) // SM0TGY 2.35: once per 24 h
         {
             nowTime = timeGps;
             setTime(nowTime);
@@ -1537,6 +1566,7 @@ void logWeather(double lat, double lon, double speed, double course)
             timeval tv = {rtc, 0};
             timezone tz = {(int)(tzOffsetNow() * (float)SECS_PER_HOUR), 0};
             forkClockNote(tv.tv_sec, 4); // SM0TGY 2.33: clock diagnostics
+            forkClockDone(4);
             settimeofday(&tv, &tz);
         }
     }
@@ -6703,13 +6733,14 @@ void taskGPS(void *pvParameters)
                         time_t timeGps = getGpsTime(); // Local gps time
                         time(&nowTime);              // system clock is UTC
                         int tdiff = abs((long)((timeGps - (time_t)(tzOffsetNow() * SECS_PER_HOUR)) - nowTime));
-                        if (timeGps > 1700000000 && tdiff > 2) // && timeGps < 2347462800)
+                        if (timeGps > 1700000000 && tdiff > 2 && forkClockDue(5)) // SM0TGY 2.35: once per 24 h
                         {
                             setTime(timeGps);
                             time_t rtc = timeGps - (time_t)(tzOffsetNow() * SECS_PER_HOUR);
                             timeval tv = {rtc, 0};
                             timezone tz = {static_cast<int>(tzOffsetNow() * SECS_PER_HOUR), 0};
                             forkClockNote(tv.tv_sec, 5); // SM0TGY 2.33: clock diagnostics
+            forkClockDone(5);
                             settimeofday(&tv, &tz);
                             log_d("\nSET GPS Timestamp = %u Year=%d\n", timeGps, year());
                             // firstGpsTime = false;
@@ -9217,8 +9248,36 @@ void taskNetwork(void *pvParameters)
                 NTP_Timeout = millis() + 86400000;
                 // setSyncProvider(getNtpTime);
                 log_d("Contacting Time Server\n");
-                configTzTime(tzPosixString(), config.ntp_host);
-                vTaskDelay(1000 / portTICK_PERIOD_MS);
+                // SM0TGY 2.35: NTP once per 24 h (not on every Wi-Fi reconnect), SNTP stopped after the
+                // sync so it does not keep adjusting the clock in the background, and the change is
+                // recorded in the /diag "Clock set" row (source 6). Retried after 10 min if no answer.
+                if (forkClockDue(6))
+                {
+                    time_t ntpBefore = time(NULL);
+                    uint32_t ntpM0 = millis();
+                    sntp_set_sync_status(SNTP_SYNC_STATUS_RESET);
+                    configTzTime(tzPosixString(), config.ntp_host);
+                    bool ntpOk = false;
+                    for (int i = 0; i < 80 && !ntpOk; i++)
+                    {
+                        vTaskDelay(100 / portTICK_PERIOD_MS);
+                        ntpOk = (sntp_get_sync_status() == SNTP_SYNC_STATUS_COMPLETED);
+                    }
+                    if (ntpOk)
+                    {
+                        forkClockNoteDelta((int32_t)(time(NULL) - ntpBefore - (time_t)((millis() - ntpM0) / 1000)), 6);
+                        forkClockDone(6);
+                    }
+                    else
+                    {
+                        NTP_Timeout = millis() + 600000;
+                    }
+                    esp_sntp_stop();
+                }
+                else
+                {
+                    vTaskDelay(1000 / portTICK_PERIOD_MS);
+                }
                 struct tm tmstruct;
                 if (getLocalTime(&tmstruct, 1000))
                 {
