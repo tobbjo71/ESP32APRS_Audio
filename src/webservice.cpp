@@ -12148,7 +12148,7 @@ void handle_about(AsyncWebServerRequest *request)
 	strcat(webString, "<table>");
 	strcat(webString, "<th colspan=\"2\"><span><b>Firmware</b></span></th>\n");
 	strcat(webString, "<tr><td align=\"right\"><b>Version: </b></td><td align=\"left\" style=\"word-break:break-word\">SM0TGY APRS Tracker<br />v" FORK_VERSION "</td></tr>\n");
-	strcat(webString, "<tr><td align=\"right\"><b>Source: </b></td><td align=\"left\" style=\"word-break:break-word\">github.com/tobbjo71/<br />ESP32APRS_Audio<br />branch newn-digi</td></tr>\n");
+	strcat(webString, "<tr><td align=\"right\"><b>Source: </b></td><td align=\"left\" style=\"word-break:break-word\">github.com/tobbjo71/<br />ESP32APRS_Audio<br />branch v2-psram</td></tr>\n");
 	strcat(webString, "<tr><td align=\"right\"><b>Based on: </b></td><td align=\"left\" style=\"word-break:break-word\">ESP32APRS_Audio<br />Somkiat Nakhonthai HS5TQA<br />github.com/nakhonthai/<br />ESP32APRS_Audio</td></tr>\n");
 	strcat(webString, "<tr><td align=\"right\"><b>License: </b></td><td align=\"left\" style=\"word-break:break-word\">GNU GPL v3<br />No warranty</td></tr>\n");
 	strcat(webString, "<tr><td align=\"right\"><b>APRS symbols: </b></td><td align=\"left\" style=\"word-break:break-word\">aprs.fi symbol set<br />github.com/hessu/<br />aprs-symbols</td></tr>\n");
@@ -12318,7 +12318,7 @@ void handle_about(AsyncWebServerRequest *request)
 	strcat(webString, "<th colspan=\"2\"><span><b>Manual Firmware Update</b></span></th>\n");
 	strcat(webString, "<tr><td align=\"right\"><b>File:</b></td><td align=\"left\"><input id=\"file\" name=\"update\" type=\"file\" onchange='sub(this)' /></td></tr>\n");
 	strcat(webString, "<tr><td align=\"right\"><b>Progress:</b></td><td><div id='prgbar'><div id='bar' style=\"width: 0px;\"><label id='prg'></label></div></div></td></tr>\n");
-	strcat(webString, "<tr><td align=\"right\"><b>Support Firmware:</b></td><td align=\"left\"><a target=\"_download\" href=\"https://github.com/tobbjo71/ESP32APRS_Audio/tree/newn-digi\">github.com/tobbjo71/ESP32APRS_Audio (newn-digi)</a></td></tr>\n");
+	strcat(webString, "<tr><td align=\"right\"><b>Support Firmware:</b></td><td align=\"left\"><a target=\"_download\" href=\"https://github.com/tobbjo71/ESP32APRS_Audio/tree/v2-psram\">github.com/tobbjo71/ESP32APRS_Audio (v2-psram)</a></td></tr>\n");
 	
 	strcat(webString, "<tr><td colspan=\"2\" align=\"right\"><div class=\"col-sm-3 col-xs-4\"><input type='submit' class=\"btn btn-danger\" id=\"update_sumbit\" value='Firmware UpLoad'></div></td></tr>\n");
 	strcat(webString, "</table><br />\n");
