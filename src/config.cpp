@@ -26,8 +26,12 @@ extern volatile int8_t adcEn;
 extern volatile int8_t dacEn;
 
 // Saves the configuration to a file
+// SM0TGY 2.27: one callsign for the whole tracker (main.cpp)
+void forkApplyStationCall();
+
 bool saveConfiguration(const char *filename, const Configuration &config)
 {
+    forkApplyStationCall(); // SM0TGY 2.27: copy the tracker callsign to IGate, digi, WX, telemetry, messages
     // Delete existing file, otherwise the configuration is appended to the file
     //AFSK_TimerEnable(false);
     // if (LITTLEFS.exists(filename))
@@ -1087,6 +1091,7 @@ bool loadConfiguration(const char *filename, Configuration &config)
 
         // Close the file (Curiously, File's destructor doesn't close the file)
         // f.close();
+        forkApplyStationCall(); // SM0TGY 2.27
         return true;
     }
     else

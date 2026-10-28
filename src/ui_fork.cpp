@@ -12,7 +12,7 @@ extern unsigned long upTimeStamp;
 extern unsigned long lastTxMillis;
 extern int btClientState();
 extern char *heardCacheDup();
-extern char *pktLogJson();
+extern char *pktLogJson(const char *call);
 extern AsyncWebServerResponse *beginBufferResponse(AsyncWebServerRequest *request, char *buf);
 
 #define ICON(d) "<svg width=\"24\" height=\"24\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"2\" stroke-linecap=\"round\" stroke-linejoin=\"round\" aria-hidden=\"true\">" d "</svg>"
@@ -65,6 +65,10 @@ SYMC.forEach(function(x){h+=symBtn(x[0],x[1],s)});
 [1,2].forEach(function(t){h+='</div><div class="gh">'+(t==1?'Primary table /':'Alternate table \\')+'</div><div class="symgrid">';for(var c=33;c<127;c++){if(SYMH[t].indexOf(c)<0)h+=symBtn(c,t,s)}});
 var o=document.getElementById('symov');o.innerHTML=h+'</div></div>';o.hidden=false;o.onclick=function(e){if(e.target===o)symClose()}}
 function symClose(){document.getElementById('symov').hidden=true}
+function stShow(c){var o=document.getElementById('symov');o.innerHTML='<div class="symbox"><div class="symhd"><b class="mono">'+c.replace(/[<>&"]/g,'')+'</b><button class="button" type="button" onclick="symClose()">Close</button></div><p class="muted">Loading&hellip;</p></div>';o.hidden=false;o.onclick=function(e){if(e.target===o)symClose()};
+fetch('/pkt.json?call='+encodeURIComponent(c)).then(function(r){return r.json()}).then(function(a){var h='';a.forEach(function(e){var t=new Date(Number(e.ts)*1000),d=20*Math.log10(parseFloat(e.mv)/1000),ts=t.getFullYear()<2020?'--:--':(('0'+t.getHours()).slice(-2)+':'+('0'+t.getMinutes()).slice(-2)+':'+('0'+t.getSeconds()).slice(-2));
+h+='<div class="pk"><div class="h"><span class="tag">RX</span>'+ts+(isFinite(d)?' &middot; '+d.toFixed(0)+' dBV':'')+'</div><div class="raw">'+String(e.r).replace(/[&<>"]/g,function(x){return{'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[x]})+'</div></div>'});
+o.querySelector('.symbox').innerHTML='<div class="symhd"><b class="mono">'+c.replace(/[<>&"]/g,'')+'</b><button class="button" type="button" onclick="symClose()">Close</button></div><p class="muted">'+(a.length?'Newest '+a.length+' packets received over radio (up to 100).':'No packets from this station received over radio since start-up (internet packets are not kept).')+'</p>'+h}).catch(function(){})}
 function symSet(sel,c,t){symClose();if(sel===null)setValue(c,t);else setValue(sel,c,t)}
 if(window.EventSource){var es=new EventSource('/eventMsg');es.addEventListener('chatMsg',function(e){var m=document.getElementById('chatMsg');if(m)m.innerHTML=e.data},false)}
 $(document).on('submit','#contentmain form',function(e){if(!e.isDefaultPrevented()){e.preventDefault();alert('This page could not save: its script did not start. Please report the page name.')}});
@@ -86,7 +90,7 @@ function draw(d){d.sort(function(a,b){return tsec(b.time)-tsec(a.time)});
 document.getElementById('hc').textContent=d.length?d.length+(d.length==1?' station':' stations'):'';
 if(!d.length){document.getElementById('hl').innerHTML='<p class="muted">No stations heard yet.</p>';return}
 var h='';d.forEach(function(r){var t=(String(r.time).split(' ')[1]||'').substr(0,5),pos=(r.km>=0)?((r.km<10?r.km.toFixed(1):Math.round(r.km))+' km \u00b7 '+r.brg+'\u00b0 '+CMP[Math.round(r.brg/45)%8]):'no position';
-h+='<div class="card"><div class="ic"><img src="/symbols/icons/'+esc(r.icon)+'" alt="" width="24" height="24"></div><div class="b"><div class="r1"><span class="cs mono">'+esc(r.callsign)+'</span><span class="t">'+t+'</span></div><div>'+pos+' \u00b7 '+esc(via(r.path))+'</div><div class="m">'+esc(r.packet)+(r.packet==1?' packet':' packets')+'</div>'+lvl(r.audio)+'</div></div>'});
+h+='<div class="card" style="cursor:pointer" onclick="stShow(\''+esc(r.callsign)+'\')"><div class="ic"><img src="/symbols/icons/'+esc(r.icon)+'" alt="" width="24" height="24"></div><div class="b"><div class="r1"><span class="cs mono">'+esc(r.callsign)+'</span><span class="t">'+t+'</span></div><div>'+pos+' \u00b7 '+esc(via(r.path))+'</div><div class="m">'+esc(r.packet)+(r.packet==1?' packet':' packets')+'</div>'+lvl(r.audio)+'</div></div>'});
 document.getElementById('hl').innerHTML=h}
 function load(){fetch('/heard.json').then(function(r){if(r.status==503){setTimeout(load,1500);throw 0}return r.json()}).then(draw).catch(function(){})}
 load();var T=setInterval(load,10000);window.pageStop=function(){clearInterval(T)};
@@ -107,12 +111,12 @@ for(i=1;i<4;i++)g+='<circle cx="170" cy="170" r="'+(40*i)+'" fill="none" stroke=
 g+='<line x1="170" y1="10" x2="170" y2="330" stroke="#D9CCA8"/><line x1="10" y1="170" x2="330" y2="170" stroke="#D9CCA8"/><text x="170" y="25" text-anchor="middle" font-size="13" font-weight="700" fill="#2F3820">N</text>';
 for(i=1;i<=4;i++)g+='<text x="'+(170+40*i-3)+'" y="183" text-anchor="end" font-size="10" fill="#5A5B4C">'+(+(S*i/4).toFixed(1))+(i==4?' km':'')+'</text>';
 var out=0;vis.forEach(function(r){if(r.km>S){out++;return}var rr=160*r.km/S,a=r.brg*Math.PI/180,x=170+rr*Math.sin(a),y=170-rr*Math.cos(a),dg=r.path&&r.path.indexOf('DIGI')==0;
-g+='<circle cx="'+x.toFixed(1)+'" cy="'+y.toFixed(1)+'" r="5.5" '+(dg?'fill="none" stroke="#4C5A2E" stroke-width="2.5"':'fill="#4C5A2E"')+'/>';
-var e=x>240;g+='<text x="'+(e?x-8:x+8).toFixed(1)+'" y="'+(y-7).toFixed(1)+'" text-anchor="'+(e?'end':'start')+'" font-size="11" font-weight="700" fill="#23251C" font-family="ui-monospace,Menlo,monospace">'+esc(r.callsign)+'</text>'});
+var oc=' onclick="stShow(\''+esc(r.callsign)+'\')" style="cursor:pointer"';g+='<circle cx="'+x.toFixed(1)+'" cy="'+y.toFixed(1)+'" r="14" fill="transparent"'+oc+'/><circle cx="'+x.toFixed(1)+'" cy="'+y.toFixed(1)+'" r="5.5" '+(dg?'fill="none" stroke="#4C5A2E" stroke-width="2.5"':'fill="#4C5A2E"')+oc+'/>';
+var e=x>240;g+='<text x="'+(e?x-8:x+8).toFixed(1)+'" y="'+(y-7).toFixed(1)+'" text-anchor="'+(e?'end':'start')+'" font-size="11" font-weight="700" fill="#23251C" font-family="ui-monospace,Menlo,monospace"'+oc+'>'+esc(r.callsign)+'</text>'});
 g+='<path d="M170 163 L174.5 175 L170 172 L165.5 175 Z" fill="#B5651D"/>';
 document.getElementById('rd').innerHTML=g;
 var b='';[0].concat(SC).forEach(function(v){b+='<button type="button" class="'+(v==sc?'on':'')+'" onclick="rdSc('+v+')">'+(v?v+' km':'Auto')+'</button>'});document.getElementById('rsc').innerHTML=b;
-var n=D.length-vis.length;document.getElementById('rinfo').textContent=(n?n+' without position. ':'')+(out?out+' outside the scale. ':'')+'Filled dot = heard direct, ring = via digipeater.'}
+var n=D.length-vis.length;document.getElementById('rinfo').textContent=(n?n+' without position. ':'')+(out?out+' outside the scale. ':'')+'Filled dot = heard direct, ring = via digipeater. Tap a station for its packets.'}
 window.rdSc=function(v){sc=v;try{localStorage.setItem('rsc',v)}catch(e){}draw()};
 function load(){fetch('/heard.json').then(function(r){if(r.status==503){setTimeout(load,1500);throw 0}return r.json()}).then(function(d){D=d;draw()}).catch(function(){})}
 draw();load();var T=setInterval(load,15000);window.pageStop=function(){clearInterval(T)};
@@ -287,7 +291,9 @@ void uiForkRoutes(AsyncWebServer &srv)
 	srv.on("/pkt.json", HTTP_GET, [](AsyncWebServerRequest *r) {
 		if (!uiAuth(r))
 			return;
-		char *js = pktLogJson();
+		String call = r->hasArg("call") ? r->arg("call") : String();
+		call.toUpperCase();
+		char *js = pktLogJson(call.length() ? call.c_str() : NULL);
 		if (!js)
 		{
 			r->send(500, "text/plain", "Out of memory");

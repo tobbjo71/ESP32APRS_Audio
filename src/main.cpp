@@ -5508,6 +5508,30 @@ bool isValidCallsignChars(const char *call)
     return true;
 }
 
+// SM0TGY 2.27: one callsign for the whole tracker. The tracker callsign and SSID (Tracker
+// page) are copied to every other identity, so IGate, digipeater, WX, telemetry and
+// messages all send as the same station. Called after loading and before saving.
+void forkApplyStationCall()
+{
+    if (config.trk_mycall[0] == 0)
+        return;
+    uint8_t s = config.trk_ssid;
+    strlcpy(config.aprs_mycall, config.trk_mycall, sizeof(config.aprs_mycall));
+    config.aprs_ssid = s;
+    strlcpy(config.digi_mycall, config.trk_mycall, sizeof(config.digi_mycall));
+    config.digi_ssid = s;
+    strlcpy(config.wx_mycall, config.trk_mycall, sizeof(config.wx_mycall));
+    config.wx_ssid = s;
+    strlcpy(config.tlm0_mycall, config.trk_mycall, sizeof(config.tlm0_mycall));
+    config.tlm0_ssid = s;
+    strlcpy(config.tlm1_mycall, config.trk_mycall, sizeof(config.tlm1_mycall));
+    config.tlm1_ssid = s;
+    if (s > 0)
+        snprintf(config.msg_mycall, sizeof(config.msg_mycall), "%s-%u", config.trk_mycall, (unsigned)s);
+    else
+        strlcpy(config.msg_mycall, config.trk_mycall, sizeof(config.msg_mycall));
+}
+
 int packet2Raw(String &tnc2, AX25Msg &Packet)
 {
     if (Packet.len < 1)

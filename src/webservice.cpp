@@ -88,8 +88,37 @@ void diagHeapTick()
 // Called by the web server library when a client stopped reading and its queue is full
 void asyncWebStalledClient() { diagStalledDropped++; }
 
+// SM0TGY 2.27: one callsign for the whole tracker, set on the Tracker page. On the other
+// pages the callsign and SSID fields are replaced by a read-only line (the values are
+// copied from the tracker at every save, see forkApplyStationCall()).
+static void forkStationCallRows(char *html)
+{
+	static const char k[] = "<tr>\n<td align=\"right\"><b>Station Callsign:</b></td>\n";
+	static const char e[] = "</select></td>\n</tr>\n";
+	char *a = strstr(html, k);
+	if (!a)
+		return;
+	char *b = strstr(a, e);
+	if (!b || !strstr(a, "name=\"mySSID\"") || strstr(a, "name=\"mySSID\"") > b)
+		return;
+	b += sizeof(e) - 1;
+	char call[16];
+	if (config.trk_ssid > 0)
+		snprintf(call, sizeof(call), "%s-%u", config.trk_mycall, (unsigned)config.trk_ssid);
+	else
+		snprintf(call, sizeof(call), "%s", config.trk_mycall);
+	char row[240];
+	int rl = snprintf(row, sizeof(row), "<tr>\n<td align=\"right\"><b>Station Callsign:</b></td>\n<td style=\"text-align: left;\"><b>%s</b> &middot; <span class=\"muted\">set on the Tracker page, used for all functions</span></td>\n</tr>\n", call);
+	if (rl <= 0 || rl > (int)(b - a))
+		return;
+	memcpy(a, row, rl);
+	memmove(a + rl, b, strlen(b) + 1);
+}
+
 AsyncWebServerResponse *beginBufferResponse(AsyncWebServerRequest *request, char *buf)
 {
+	if (!request->url().startsWith("/tracker"))
+		forkStationCallRows(buf);
 	size_t len = strlen(buf);
 	if (len > diagMaxPage)
 	{
@@ -1572,7 +1601,7 @@ String event_chatMessage(bool gethtml)
 			}
 			else
 			{
-				strcat(html, "<td>TF</td>");
+				strcat(html, "<td>Fail</td>"); // SM0TGY 2.27: was "TF"
 			}
 
 			snprintf(temp_buffer, sizeof(temp_buffer), "<td>%d</td></tr>\n", pkg.msgID);
@@ -3499,7 +3528,7 @@ void handle_msg(AsyncWebServerRequest *request)
 		strcat(html, "<tr>\n");
 		strcat(html, "<td align=\"right\"><b>My Callsign:</b></td>\n");
 		char temp_buffer[512];
-		snprintf(temp_buffer, sizeof(temp_buffer), "<td style=\"text-align: left;\"><input  size=\"20\" maxlength=\"9\" name=\"mycall\" type=\"text\" value=\"%s\" /> *<i>Callsign with SSID (Ex. HS5TQA-12)</i></td>\n", config.msg_mycall);
+		snprintf(temp_buffer, sizeof(temp_buffer), "<td style=\"text-align: left;\"><b>%s</b> &middot; <span class=\"muted\">station callsign, set on the Tracker page</span></td>\n", config.msg_mycall); // SM0TGY 2.27: one callsign for the whole tracker
 		strcat(html, temp_buffer);
 		strcat(html, "</tr>\n");
 
@@ -3587,7 +3616,7 @@ void handle_msg(AsyncWebServerRequest *request)
 		strcat(html, event_chatMessage(true).c_str());
 		strcat(html, "</table>\n");
 		// SM0TGY 2.26: what the colours and the ACK column mean (verified in message.cpp)
-		strcat(html, "<p class=\"muted\" style=\"margin:6px 0\">Pink: sent, waiting for ACK; n/m = retries left of m. Blue (TX): ACK received. Green (RX): message received. Red (TF): no ACK after all retries. Messages are sent from the callsign under Message settings.</p>\n");
+		strcat(html, "<p class=\"muted\" style=\"margin:6px 0\">Pink: sent, waiting for ACK; n/m = retries left of m. Blue (TX): ACK received. Green (RX): message received. Red (Fail): no ACK after all retries. Messages are sent with the station callsign (Tracker page).</p>\n");
 
 		strcat(html, "</td></tr><tr><td colspan=\"5\">");
 
@@ -10643,7 +10672,7 @@ void handle_tracker(AsyncWebServerRequest *request)
 
 	strcat(html, "</tr>\n");
 	strcat(html, "<tr>\n");
-	strcat(html, "<td align=\"right\"><b>Station Callsign:</b></td>\n");
+	strcat(html, "<td align=\"right\"><b>Station Callsign (all functions):</b></td>\n");
 	snprintf(tempHtml, sizeof(tempHtml), "<td style=\"text-align: left;\"><input maxlength=\"7\" size=\"6\" id=\"myCall\" name=\"myCall\" type=\"text\" value=\"%s\" /></td>\n", config.trk_mycall);
 	strcat(html, tempHtml);
 
@@ -11402,7 +11431,7 @@ void handle_wireless(AsyncWebServerRequest *request)
 
 // SM0TGY: packet log for the Packets page: last 60 minutes, RX and own TX, kept in PSRAM
 // so the page shows history even when it was not open.
-#define PKTLOG_N 200
+#define PKTLOG_N 1500 // SM0TGY 2.27: was 200; PSRAM ~370 kB; per station the newest 100 are shown
 #define PKTLOG_RAW 224
 typedef struct
 {
@@ -11444,10 +11473,14 @@ void pktLogAdd(char dir, const char *raw, size_t len, int mv)
 	xSemaphoreGive(pktLogMux);
 }
 
-// JSON array, newest first, entries younger than 60 minutes. Caller frees.
-char *pktLogJson()
+// JSON array, newest first. Without call: entries younger than 60 minutes, at most 200.
+// With call (SM0TGY 2.27): received packets from that source, newest 100, any age. Caller frees.
+char *pktLogJson(const char *call)
 {
-	size_t cap = 64 + (size_t)pktLogCount * (PKTLOG_RAW * 2 + 80);
+	size_t clen = call ? strlen(call) : 0;
+	int maxN = clen ? 100 : 200;
+	int nOut = 0;
+	size_t cap = 64 + (size_t)(pktLogCount < maxN ? pktLogCount : maxN) * (PKTLOG_RAW * 6 + 80);
 	char *js = (char *)malloc(cap);
 	if (!js)
 		return NULL;
@@ -11461,10 +11494,16 @@ char *pktLogJson()
 		{
 			int i = (pktLogHead - 1 - k + PKTLOG_N) % PKTLOG_N;
 			pktLogEntry *e = &pktLog[i];
-			if (now - e->ms > 3600000UL)
+			if (clen)
+			{
+				if (e->dir != 'R' || strncmp(e->raw, call, clen) != 0 || e->raw[clen] != '>')
+					continue;
+			}
+			else if (now - e->ms > 3600000UL)
 				break;
-			if (o + PKTLOG_RAW * 2 + 80 >= cap)
+			if (nOut >= maxN || o + PKTLOG_RAW * 6 + 80 >= cap)
 				break;
+			nOut++;
 			// SM0TGY 2.25: time from the uptime counter, so the list is always in order even if
 			// the clock was set in between (GPS sync)
 			long ts = e->t ? (long)(time(NULL) - (time_t)((now - e->ms) / 1000)) : 0;
