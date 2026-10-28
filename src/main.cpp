@@ -7711,7 +7711,7 @@ void taskAPRS(void *pvParameters)
                         if (rawP)
                         {
                             memset(rawP, 0, tnc2.length() + 1);
-                            tnc2.toCharArray(rawP, tnc2.length(), 0);
+                            tnc2.toCharArray(rawP, tnc2.length() + 1, 0); // SM0TGY 2.29: buffer size incl. terminator; was length(), which dropped the last character (Heard, Packets, live view)
                             // memcpy(rawP, tnc2.c_str(), tnc2.length());
                             int idx = pkgListUpdate(call, rawP, type, 0, incomingPacket.mVrms);
 
