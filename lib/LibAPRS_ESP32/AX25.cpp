@@ -674,10 +674,14 @@ void Ax25BitParse(uint8_t bit, uint8_t modem,uint16_t mV)
 				{
 					rx->crc ^= 0xFFFF;
 					bool crcOk = (rx->frame[rx->frameIdx - 2] == (rx->crc & 0xFF)) && (rx->frame[rx->frameIdx - 1] == ((rx->crc >> 8) & 0xFF));
+					// SM0TGY 2.25: frames below the decoder's level (10 mVrms) are noise the
+					// demodulator turned into bits; they are not counted or logged as bad frames.
+					bool diagNoise = !crcOk && mV < 10;
 					if (crcOk)
 						ax25DiagOk++;
-					else
+					else if (!diagNoise)
 						ax25DiagBad++;
+					if (!diagNoise)
 					{ // SM0TGY: frame log for the radio test page
 						Ax25DiagEntry *e = &ax25DiagLog[ax25DiagLogN % AX25_DIAG_LOG];
 						e->ms = millis();

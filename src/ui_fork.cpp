@@ -81,7 +81,7 @@ var CMP=['N','NE','E','SE','S','SW','W','NW'];
 function tsec(t){var a=String(t).split(' '),b=(a[1]||'0:0:0').split(':');return(+a[0])*86400+(+b[0])*3600+(+b[1])*60+(+b[2])}
 function esc(s){return String(s).replace(/[&<>"]/g,function(c){return{'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]})}
 function via(p){if(!p)return'';if(p.indexOf('RF: DIRECT')==0)return'direct';if(p.indexOf('DIGI: ')==0)return'via '+p.substr(6);if(p.indexOf('INET:')==0)return'internet';if(p.indexOf('RF: ')==0)return p.substr(4);return p}
-function lvl(a){var d=parseFloat(a);if(!isFinite(d))return'';var w=Math.max(0,Math.min(100,(d+40)/40*100)),c=d>-10?'var(--red)':(d>=-20?'var(--o5)':'var(--och)');return '<div class="lvl"><div><b style="width:'+w+'%;background:'+c+'"></b></div><span>'+d.toFixed(0)+' dBV</span></div>'}
+function lvl(a){var d=parseFloat(a);if(!isFinite(d))return'';var w=Math.max(0,Math.min(100,(d+40)/40*100)),c=d>-14?'var(--red)':(d>=-30?'var(--o5)':'var(--och)');return '<div class="lvl"><div><b style="width:'+w+'%;background:'+c+'"></b></div><span>'+d.toFixed(0)+' dBV</span></div>'}
 function draw(d){d.sort(function(a,b){return tsec(b.time)-tsec(a.time)});
 document.getElementById('hc').textContent=d.length?d.length+(d.length==1?' station':' stations'):'';
 if(!d.length){document.getElementById('hl').innerHTML='<p class="muted">No stations heard yet.</p>';return}
@@ -121,11 +121,11 @@ draw();load();var T=setInterval(load,15000);window.pageStop=function(){clearInte
 
 static const char UI_PKT[] PROGMEM = R"HTML(<h2 class="pg">Packets <span id="pc"></span></h2>
 <div class="tile" style="margin-bottom:10px"><small>Audio level, last received packet</small><b class="mono" id="pdb">&ndash;</b>
-<div class="lvl"><div style="height:12px"><b id="pbar" style="height:12px;width:0"></b></div></div><span>&minus;40 &hellip; 0 dBV &middot; good &minus;20 &hellip; &minus;10</span></div>
+<div class="lvl"><div style="height:12px"><b id="pbar" style="height:12px;width:0"></b></div></div><span>&minus;40 &hellip; 0 dBV &middot; good &minus;30 &hellip; &minus;15 &middot; red: near clipping (about &minus;13 dBV on this board)</span></div>
 <div class="seg" id="pf"><button type="button" class="on" data-f="">All</button><button type="button" data-f="RX">Received</button><button type="button" data-f="TX">Sent</button></div>
 <div id="pl"><p class="muted">Loading&hellip;</p></div>
 <script>(function(){var L=[],F='',stopped=false;
-function lv(db){var b=document.getElementById('pbar');b.style.width=Math.max(0,Math.min(100,(db+40)/40*100))+'%';b.style.background=db>-10?'var(--red)':(db>=-20?'var(--o5)':'var(--och)');document.getElementById('pdb').textContent=db.toFixed(1)+' dBV'}
+function lv(db){var b=document.getElementById('pbar');b.style.width=Math.max(0,Math.min(100,(db+40)/40*100))+'%';b.style.background=db>-14?'var(--red)':(db>=-30?'var(--o5)':'var(--och)');document.getElementById('pdb').textContent=db.toFixed(1)+' dBV'}
 function esc(s){return String(s).replace(/[&<>"]/g,function(c){return{'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]})}
 function draw(){var h='';L.forEach(function(p){if(F&&p.d!=F)return;h+='<div class="pk"><div class="h"><span class="tag '+(p.d=='TX'?'tx':'')+'">'+p.d+'</span>'+p.t+(p.db!==null?' &middot; '+p.db.toFixed(0)+' dBV':'')+'</div><div class="raw">'+esc(p.r)+'</div></div>'});
 document.getElementById('pl').innerHTML=h||'<p class="muted">No packets in the last 60 minutes.</p>';document.getElementById('pc').textContent=L.length?L.length+' in the last 60 min':''}

@@ -1015,6 +1015,11 @@ time_t getGpsTime()
         timeinfo.Minute = gps.time.minute();
         timeinfo.Second = gps.time.second();
         time_t timeStamp = makeTime(timeinfo);
+        // SM0TGY 2.25: the parsed GPS time is as old as the last RMC/GGA sentence; add that age,
+        // otherwise every sync set the clock back by up to several seconds.
+        uint32_t age = gps.time.age();
+        if (age < 60000)
+            timeStamp += (age + 500) / 1000;
         time = timeStamp + tzOffsetNow() * SECS_PER_HOUR;
         return time;
     }
@@ -1090,7 +1095,7 @@ void logTracker(double lat, double lon, double speed, double course)
     {
         time_t timeGps = getGpsTime(); // Local gps time
         time(&nowTime);
-        int tdiff = abs(timeGps - nowTime);
+        int tdiff = abs((long)((timeGps - (time_t)(tzOffsetNow() * SECS_PER_HOUR)) - nowTime)); // SM0TGY 2.25: timeGps is local, nowTime UTC (was always ~1 h apart, so the clock was reset on every log line)
         if (timeGps > 1700000000 && tdiff > 2) // && timeGps < 2347462800)
         {
             nowTime = timeGps;
@@ -1231,7 +1236,7 @@ void logIGate(double lat, double lon, double speed, double course)
     {
         time_t timeGps = getGpsTime(); // Local gps time
         time(&nowTime);
-        int tdiff = abs(timeGps - nowTime);
+        int tdiff = abs((long)((timeGps - (time_t)(tzOffsetNow() * SECS_PER_HOUR)) - nowTime)); // SM0TGY 2.25: timeGps is local, nowTime UTC (was always ~1 h apart, so the clock was reset on every log line)
         if (timeGps > 1700000000 && tdiff > 2) // && timeGps < 2347462800)
         {
             nowTime = timeGps;
@@ -1363,7 +1368,7 @@ void logDigi(double lat, double lon, double speed, double course)
     {
         time_t timeGps = getGpsTime(); // Local gps time
         time(&nowTime);
-        int tdiff = abs(timeGps - nowTime);
+        int tdiff = abs((long)((timeGps - (time_t)(tzOffsetNow() * SECS_PER_HOUR)) - nowTime)); // SM0TGY 2.25: timeGps is local, nowTime UTC (was always ~1 h apart, so the clock was reset on every log line)
         if (timeGps > 1700000000 && tdiff > 2) // && timeGps < 2347462800)
         {
             nowTime = timeGps;
@@ -1495,7 +1500,7 @@ void logWeather(double lat, double lon, double speed, double course)
     {
         time_t timeGps = getGpsTime(); // Local gps time
         time(&nowTime);
-        int tdiff = abs(timeGps - nowTime);
+        int tdiff = abs((long)((timeGps - (time_t)(tzOffsetNow() * SECS_PER_HOUR)) - nowTime)); // SM0TGY 2.25: timeGps is local, nowTime UTC (was always ~1 h apart, so the clock was reset on every log line)
         if (timeGps > 1700000000 && tdiff > 2) // && timeGps < 2347462800)
         {
             nowTime = timeGps;

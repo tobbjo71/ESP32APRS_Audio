@@ -11463,7 +11463,10 @@ char *pktLogJson()
 				break;
 			if (o + PKTLOG_RAW * 2 + 80 >= cap)
 				break;
-			o += snprintf(js + o, cap - o, "%s{\"d\":\"%s\",\"ts\":%ld,\"mv\":%d,\"r\":\"", o > 1 ? "," : "", e->dir == 'T' ? "TX" : "RX", (long)e->t, e->mv);
+			// SM0TGY 2.25: time from the uptime counter, so the list is always in order even if
+			// the clock was set in between (GPS sync)
+			long ts = e->t ? (long)(time(NULL) - (time_t)((now - e->ms) / 1000)) : 0;
+			o += snprintf(js + o, cap - o, "%s{\"d\":\"%s\",\"ts\":%ld,\"mv\":%d,\"r\":\"", o > 1 ? "," : "", e->dir == 'T' ? "TX" : "RX", ts, e->mv);
 			for (const char *c = e->raw; *c && o + 8 < cap; c++)
 			{
 				unsigned char ch = (unsigned char)*c;
