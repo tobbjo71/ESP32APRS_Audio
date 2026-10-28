@@ -687,7 +687,7 @@ void Ax25BitParse(uint8_t bit, uint8_t modem,uint16_t mV)
 						e->mV = mV;
 						ModemGetSignalLevel(modem, &e->peak, &e->valley, &e->level);
 						ax25DiagLogN++;
-						if (rx->frameIdx >= 30)
+						if (rx->frameIdx >= 30 && mV >= 10) // SM0TGY 2.23: not on noise frames (they froze the ring just before the real packet)
 							rxCapTrigger(rx->frameIdx, crcOk);
 					}
 					if(crcOk) //check CRC
