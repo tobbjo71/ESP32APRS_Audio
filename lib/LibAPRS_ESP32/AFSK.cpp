@@ -1188,8 +1188,18 @@ static bool IRAM_ATTR s_conv_done_cb(adc_continuous_handle_t stAdcHandle, const 
   portENTER_CRITICAL_ISR(&fifoMux); // same lock RingBuffer_Pop() uses
   fifo.lock = true;
   adcIsrCount += edata->size / SOC_ADC_DIGI_RESULT_BYTES; // SM0TGY: samples/s on the radio test page
-  for (uint32_t k = 0; k < edata->size; k += SOC_ADC_DIGI_RESULT_BYTES)
+  for (uint32_t j = 0; j < edata->size; j += SOC_ADC_DIGI_RESULT_BYTES)
   {
+#if defined(CONFIG_IDF_TARGET_ESP32)
+    // SM0TGY 2.22: on the classic ESP32 the I2S ADC delivers each pair of 16-bit results
+    // swapped (n+1 before n). Measured in a 2.21 RX recording: swapping the pairs back
+    // lowers the power above 9 kHz from 8.9 % to 0.4 % and the waveform becomes smooth.
+    uint32_t k = j ^ SOC_ADC_DIGI_RESULT_BYTES;
+    if (k >= edata->size)
+      k = j;
+#else
+    uint32_t k = j;
+#endif
     adc_digi_output_data_t *p = (adc_digi_output_data_t *)&edata->conv_frame_buffer[k];
 
 #if defined(CONFIG_IDF_TARGET_ESP32)
