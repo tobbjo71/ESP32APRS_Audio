@@ -1009,6 +1009,29 @@ void handle_diag(AsyncWebServerRequest *request)
 		else
 			strlcat(html, "<tr><td>Last crash</td><td>no core dump stored</td></tr>\n", cap);
 	}
+	{ // SM0TGY 2.33: clock. GPS time as parsed now, its age, and every time the clock was set
+		extern volatile uint32_t clkSetCount, clkSetLastUp;
+		extern volatile int32_t clkSetLastDelta, clkSetMaxDelta;
+		extern volatile uint8_t clkSetLastSrc;
+		extern TinyGPSPlus gps;
+		static const char *srcName[] = {"-", "tracker log", "IGate log", "digi log", "WX log", "GPS sync"};
+		char row[260];
+		time_t nowT = time(NULL);
+		struct tm u;
+		gmtime_r(&nowT, &u);
+		if (gps.time.isValid())
+			snprintf(row, sizeof(row), "<tr><td>Clock (UTC) / GPS time</td><td>%02d:%02d:%02d / %02d:%02d:%02d, parsed %lu ms ago</td></tr>\n",
+					 u.tm_hour, u.tm_min, u.tm_sec, gps.time.hour(), gps.time.minute(), gps.time.second(), (unsigned long)gps.time.age());
+		else
+			snprintf(row, sizeof(row), "<tr><td>Clock (UTC) / GPS time</td><td>%02d:%02d:%02d / no GPS time</td></tr>\n", u.tm_hour, u.tm_min, u.tm_sec);
+		strlcat(html, row, cap);
+		if (clkSetCount)
+			snprintf(row, sizeof(row), "<tr><td>Clock set</td><td>%lu times; last by %s at uptime %lu s, by %+ld s; largest change %+ld s</td></tr>\n",
+					 (unsigned long)clkSetCount, srcName[clkSetLastSrc < 6 ? clkSetLastSrc : 0], (unsigned long)clkSetLastUp, (long)clkSetLastDelta, (long)clkSetMaxDelta);
+		else
+			snprintf(row, sizeof(row), "<tr><td>Clock set</td><td>not since start</td></tr>\n");
+		strlcat(html, row, cap);
+	}
 	strlcat(html, "</table>\n<h4>Task stacks (bytes)</h4>\n<table border=\"1\" cellpadding=\"3\"><tr><th>Task</th><th>Size</th><th>Never used (min free)</th></tr>\n", cap);
 	diagTaskRow(html, cap, "taskNetwork", taskNetworkHandle, 7000);
 	diagTaskRow(html, cap, "taskAPRS", taskAPRSHandle, 4096);
@@ -1548,7 +1571,9 @@ String event_chatMessage(bool gethtml)
 
 			pkg.callsign[10] = 0;
 			// time_t tm = pkg.time;
-			localtime_r(pkg.shown ? &pkg.shown : &pkg.time, &tmstruct); // SM0TGY 2.30: send/receive time, not the next retry time
+			// SM0TGY 2.33: time from the uptime counter (as on Packets), so it matches and is always in order
+			time_t shownT = pkg.ms ? (time_t)(time(NULL) - (time_t)((millis() - pkg.ms) / 1000)) : (pkg.shown ? pkg.shown : pkg.time);
+			localtime_r(&shownT, &tmstruct);
 			char strTime[10];
 			// sprintf(strTime, "%02d:%02d:%02d", tmstruct.tm_hour, tmstruct.tm_min, tmstruct.tm_sec);
 			if (tmNow.tm_mday == tmstruct.tm_mday)
@@ -3524,6 +3549,8 @@ void handle_msg(AsyncWebServerRequest *request)
 		// strcat(html, "if(lh != null) {lh.innerHTML = e.data;}";
 		// strcat(html, "}, false);\n}";
 		strcat(html, "</script>\n");
+		// SM0TGY 2.33: chat first, settings folded below it
+		strcat(html, "<div style=\"display:flex;flex-direction:column\">\n<details style=\"order:2;margin-top:12px\"><summary class=\"gh\" style=\"cursor:pointer\">Message settings</summary>\n");
 
 		// strcat(html, "<h2>System Setting</h2>\n");
 		strcat(html, "<form accept-charset=\"UTF-8\" action=\"#\" class=\"form-horizontal\" id=\"formMSG\" method=\"post\">\n");
@@ -3625,9 +3652,9 @@ void handle_msg(AsyncWebServerRequest *request)
 		strcat(html, "<div><button class=\"button\" type='submit' id='submitMSG'  name=\"commitMSG\"> Apply Change </button></div>\n");
 		strcat(html, "<input type=\"hidden\" name=\"commitMSG\"/>\n");
 		strcat(html, "</td></tr></table><br />\n");
-		strcat(html, "</form><br /><br />");
+		strcat(html, "</form></details>\n");
 
-		strcat(html, "<table width=\"90%\">\n");
+		strcat(html, "<table width=\"90%\" style=\"order:1\">\n");
 		strcat(html, "<th style=\"background-color: #070ac2;\">CHAT MESSAGE</th>\n");
 
 		strcat(html, "<tr><td>\n");
@@ -3651,6 +3678,7 @@ void handle_msg(AsyncWebServerRequest *request)
 		strcat(html, "</form><br />\n");
 
 		strcat(html, "</td></tr></table>");
+		strcat(html, "</div>\n"); // SM0TGY 2.33: end of the flex column
 
 		// request->send(200, "text/html", html); // send to someones browser when asked
 		AsyncWebServerResponse *response = beginBufferResponse(request, html);
@@ -11896,25 +11924,35 @@ void handle_rxlog(AsyncWebServerRequest *request)
 // SM0TGY: radio set-up page (More -> Radio level and TX test), loaded into the app shell.
 // Live RX level for RV2 (/rxlevel), level of the last decoded packet (WebSocket), and the
 // TX test (/txtest). Leaving the page stops the polling and any running TX test.
-static const char UI_RADIOTEST[] PROGMEM = R"HTML(<h2 class="pg">Radio level and TX test</h2>
-<div class="tile" style="margin-bottom:8px"><small>RX level live &middot; squelch open = noise</small><b class="mono" id="lv">&ndash;</b>
-<div class="lvl"><div style="height:12px"><b id="lbar" style="height:12px;width:0"></b></div></div><span id="la">Input &ndash; mV</span><span class="mono" id="ldx" style="display:block"></span></div>
-<p class="muted">The decoder listens only above 0.010 Vrms (&minus;40 dBV). Flags: HDLC flags seen (each packet starts with many). Frames with bad CRC: tones heard but bits wrong (level or distortion). Counters run from start-up. Input range at GPIO36 is about 0&hellip;950 mV; CLIP means overdriven: turn RV2 or the radio volume down.</p>
+static const char UI_RADIOTEST[] PROGMEM = R"HTML(<h2 class="pg">Radio setup</h2>
+<p class="muted">For a new radio or cable, go through the steps in order. The TX buttons key the radio: use low power or a dummy load. A button stays on until it is pressed again (at most 180 s); leaving this page stops it.</p>
+<p><b id="tts">&ndash;</b></p>
+<div class="gh">1 &middot; PTT</div>
+<div class="tile" style="margin-bottom:8px"><div class="seg" style="margin:0 0 6px"><button type="button" id="tb4" onclick="tt(4)">PTT on</button></div><span class="muted">The radio must transmit (no tone). If it does not: check the cable and the PTT settings under Hardware.</span></div>
+<div class="gh">2 &middot; Receive level &middot; RV2</div>
+<div class="tile" style="margin-bottom:8px"><small>Input level live &middot; squelch open = noise</small><b class="mono" id="lv">&ndash;</b>
+<div class="lvl"><div style="height:12px;background:linear-gradient(to right,var(--s1) 58.3%,#CFDDB0 58.3%,#CFDDB0 75%,var(--s1) 75%)"><b id="lbar" style="height:12px;width:0"></b></div></div><span id="la">Input &ndash; mV</span>
+<span class="muted" style="display:block;margin-top:6px">Let another station send packets (or open the squelch). Packets should be about &minus;25 &hellip; &minus;15 dBV (green band). Turn RV2 (12 turns) or the radio volume; CLIP means too high.</span></div>
 <div class="tile" style="margin-bottom:8px"><small>Last received packet</small><b class="mono" id="pk">&ndash;</b><span class="mono" id="pr" style="word-break:break-all"></span></div>
+<div class="gh">3 &middot; Transmit level &middot; RV1</div>
+<div class="tile" style="margin-bottom:8px"><div class="seg" style="margin:0 0 6px"><button type="button" id="tb1" onclick="tt(1)">1200 Hz</button><button type="button" id="tb2" onclick="tt(2)">2200 Hz</button><button type="button" id="tb3" onclick="tt(3)">1200/2200 Hz</button></div>
+<span class="muted">Listen on another radio and compare with a station that is known to be decoded well. Turn RV1 up until the tone gets no louder, only rougher, then back about a third. With a deviation meter: about 3 kHz.</span></div>
+<div class="gh">4 &middot; A real packet</div>
+<div class="tile" style="margin-bottom:8px"><p style="margin:0 0 6px"><button type="button" class="button" onclick="bcn(this)">Send beacon now</button></p><span class="muted">Another station or an iGate should decode it. Your own transmissions are listed under Packets.</span></div>
+<details style="margin-top:10px"><summary class="gh" style="cursor:pointer">Details: decoder, log and recordings</summary>
+<span class="mono" id="ldx" style="display:block;margin:6px 0"></span>
+<p class="muted">The decoder listens only above 0.010 Vrms (&minus;40 dBV). Flags: HDLC flags seen (each packet starts with many). Frames with bad CRC: tones heard but bits wrong (level or distortion). Counters run from start-up. Input range at GPIO36 is about 0&hellip;950 mV.</p>
 <div class="gh">Decoder log &middot; last frames, newest first</div>
 <div class="tile" style="margin-bottom:8px;overflow-x:auto"><table class="mono" style="font-size:12px;margin:0"><thead><tr><th>s ago</th><th>demod</th><th>bytes</th><th>CRC</th><th>Vrms</th><th>peak/valley/level</th></tr></thead><tbody id="rlog"><tr><td colspan="6">&ndash;</td></tr></tbody></table></div>
-<div class="gh">Recordings &middot; the last 6 s of input when a frame ends</div>
+<div class="gh">Recordings &middot; the last 6 s of input</div>
 <div class="tile" style="margin-bottom:8px"><div id="rcap" class="mono" style="font-size:13px">&ndash;</div><p style="margin:8px 0 0"><button type="button" class="button" onclick="rnow()">Record now</button></p><span class="muted"><b>Record now</b> saves the <b>last</b> 6 s of input, so press it right <b>after</b> the other station has finished sending (within 1&ndash;2 s). A recording is also made automatically 0.4 s after a frame of 30 bytes or more at a level of at least 0.010 Vrms (good or bad CRC), at most every 1.5 s. The last 3 recordings are kept; tap one to download it as a WAV file.</span></div>
-<div class="gh">TX test</div>
-<div class="seg"><button type="button" id="tb4" onclick="tt(4)">PTT</button><button type="button" id="tb1" onclick="tt(1)">1200 Hz</button><button type="button" id="tb2" onclick="tt(2)">2200 Hz</button><button type="button" id="tb3" onclick="tt(3)">1200/2200 Hz</button></div>
-<p><b id="tts">&ndash;</b></p>
-<p class="muted">A button stays on until it is pressed again, at most 180 s; leaving this page stops it. It keys the radio: measure PTT, set the TX level with RV1. Use a dummy load or low power.</p>
+</details>
 <script>(function(){var stopped=false,TT=0,ws=null,t1=null,t2=null,t3=null,t4=null;function E(i){return document.getElementById(i)}
 function ts(j){TT=j.on;E('tts').textContent=j.t;for(var i=1;i<5;i++){var b=E('tb'+i);b.style.background=TT==i?'var(--red)':'';b.style.color=TT==i?'#fff':'';b.style.borderColor=TT==i?'var(--red)':''}}
 window.tt=function(m){fetch('/txtest?m='+(TT?0:m)).then(function(r){return r.json()}).then(ts).catch(function(){E('tts').textContent='No answer'})};
 function lv(){if(stopped)return;fetch('/rxlevel').then(function(r){return r.json()}).then(function(j){var v=j.mv/1000,d=20*Math.log10(v);if(!isFinite(d)||d<-60)d=-60;
 var c=j.clip!==undefined?j.clip:(j.lo>=0&&(j.lo<20||j.hi>930));E('lv').textContent=j.tx?'TX':(v.toFixed(3)+' Vrms · '+d.toFixed(1)+' dBV');
-E('la').textContent='Input '+(j.lo<0?'–':(j.lo+'…'+j.hi))+' mV'+(c?' · CLIP':'');if(j.sps!==undefined)E('ldx').textContent='Samples/s '+j.sps+' \u00b7 decoder '+(j.dcd?'on':'off')+' \u00b7 flags '+j.fl+' \u00b7 frames ok '+j.ok+' / bad CRC '+j.bad+(j.gap!==undefined?' \u00b7 sample timer longest gap '+j.gap+' \u00b5s (normal 104), late '+j.late+' \u00b7 CPU '+j.mhz+' MHz':'');var b=E('lbar');b.style.width=Math.round((d+60)/60*100)+'%';b.style.background=c||d>-10?'var(--red)':(d>-40?'var(--o5)':'var(--och)')}).catch(function(){}).then(function(){if(!stopped)t1=setTimeout(lv,300)})}
+E('la').textContent='Input '+(j.lo<0?'–':(j.lo+'…'+j.hi))+' mV'+(c?' · CLIP':'');if(j.sps!==undefined)E('ldx').textContent='Samples/s '+j.sps+' \u00b7 decoder '+(j.dcd?'on':'off')+' \u00b7 flags '+j.fl+' \u00b7 frames ok '+j.ok+' / bad CRC '+j.bad+(j.gap!==undefined?' \u00b7 sample timer longest gap '+j.gap+' \u00b5s (normal 104), late '+j.late+' \u00b7 CPU '+j.mhz+' MHz':'');var b=E('lbar');b.style.width=Math.round((d+60)/60*100)+'%';b.style.background=c||d>-14?'var(--red)':(d>-40?'var(--o5)':'var(--och)')}).catch(function(){}).then(function(){if(!stopped)t1=setTimeout(lv,300)})}
 function rl(){if(stopped)return;fetch('/rxlog').then(function(r){return r.json()}).then(function(a){var h='';a.forEach(function(e){h+='<tr><td>'+e.ago+'</td><td>'+e.m+'</td><td>'+e.len+'</td><td>'+(e.ok?'ok':'<b style="color:var(--red)">bad</b>')+'</td><td>'+(e.mv/1000).toFixed(3)+'</td><td>'+e.pk+' / '+e.va+' / '+e.lv+'</td></tr>'});E('rlog').innerHTML=h||'<tr><td colspan="6">No frames yet</td></tr>'}).catch(function(){}).then(function(){if(!stopped)t3=setTimeout(rl,2000)})}
 function rc(){if(stopped)return;fetch('/rxcap').then(function(r){return r.json()}).then(function(a){var h='';a.forEach(function(e){h+='<div><a href="/rxwav?i='+e.i+'" download>rx '+e.ago+' s ago \u00b7 '+(e.len?e.len+' bytes, CRC '+(e.ok?'ok':'bad'):'manual')+' \u00b7 '+e.rate+' Hz \u00b7 '+e.sec+' s</a></div>'});E('rcap').innerHTML=h||'No recordings yet'}).catch(function(){}).then(function(){if(!stopped)t4=setTimeout(rc,3000)})}
 window.rnow=function(){fetch('/rxcap?now=1').then(function(){setTimeout(function(){clearTimeout(t4);rc()},600)})};

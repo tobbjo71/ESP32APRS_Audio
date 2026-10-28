@@ -981,6 +981,31 @@ String deg2lon(double deg)
     return String(dmm);
 }
 
+// SM0TGY 2.33: record every time the system clock is set (shown on /diag). Sources:
+// 1-4 = log functions (tracker, IGate, digi, WX), 5 = periodic GPS sync.
+volatile uint32_t clkSetCount = 0, clkSetLastUp = 0;
+volatile int32_t clkSetLastDelta = 0, clkSetMaxDelta = 0;
+volatile uint8_t clkSetLastSrc = 0;
+void forkClockNote(time_t newUtc, uint8_t src)
+{
+    int32_t d = (int32_t)(newUtc - time(NULL));
+    clkSetCount++;
+    clkSetLastDelta = d;
+    if (abs(d) > abs(clkSetMaxDelta))
+        clkSetMaxDelta = d;
+    clkSetLastSrc = src;
+    clkSetLastUp = millis() / 1000;
+}
+
+// SM0TGY 2.33: "Send beacon now" from the web pages; handled by taskAPRS when the tracker is on
+bool forkBeaconNow()
+{
+    if (!config.trk_en)
+        return false;
+    EVENT_TX_POSITION = 10;
+    return true;
+}
+
 time_t setGpsTime()
 {
     time_t time;
@@ -1103,6 +1128,7 @@ void logTracker(double lat, double lon, double speed, double course)
             time_t rtc = nowTime - (time_t)(tzOffsetNow() * (float)SECS_PER_HOUR);
             timeval tv = {rtc, 0};
             timezone tz = {(int)(tzOffsetNow() * (float)SECS_PER_HOUR), 0};
+            forkClockNote(tv.tv_sec, 1); // SM0TGY 2.33: clock diagnostics
             settimeofday(&tv, &tz);
         }
     }
@@ -1244,6 +1270,7 @@ void logIGate(double lat, double lon, double speed, double course)
             time_t rtc = nowTime - (time_t)(tzOffsetNow() * (float)SECS_PER_HOUR);
             timeval tv = {rtc, 0};
             timezone tz = {(int)(tzOffsetNow() * (float)SECS_PER_HOUR), 0};
+            forkClockNote(tv.tv_sec, 2); // SM0TGY 2.33: clock diagnostics
             settimeofday(&tv, &tz);
         }
     }
@@ -1376,6 +1403,7 @@ void logDigi(double lat, double lon, double speed, double course)
             time_t rtc = nowTime - (time_t)(tzOffsetNow() * (float)SECS_PER_HOUR);
             timeval tv = {rtc, 0};
             timezone tz = {(int)(tzOffsetNow() * (float)SECS_PER_HOUR), 0};
+            forkClockNote(tv.tv_sec, 3); // SM0TGY 2.33: clock diagnostics
             settimeofday(&tv, &tz);
         }
     }
@@ -1508,6 +1536,7 @@ void logWeather(double lat, double lon, double speed, double course)
             time_t rtc = nowTime - (time_t)(tzOffsetNow() * (float)SECS_PER_HOUR);
             timeval tv = {rtc, 0};
             timezone tz = {(int)(tzOffsetNow() * (float)SECS_PER_HOUR), 0};
+            forkClockNote(tv.tv_sec, 4); // SM0TGY 2.33: clock diagnostics
             settimeofday(&tv, &tz);
         }
     }
@@ -6680,6 +6709,7 @@ void taskGPS(void *pvParameters)
                             time_t rtc = timeGps - (time_t)(tzOffsetNow() * SECS_PER_HOUR);
                             timeval tv = {rtc, 0};
                             timezone tz = {static_cast<int>(tzOffsetNow() * SECS_PER_HOUR), 0};
+                            forkClockNote(tv.tv_sec, 5); // SM0TGY 2.33: clock diagnostics
                             settimeofday(&tv, &tz);
                             log_d("\nSET GPS Timestamp = %u Year=%d\n", timeGps, year());
                             // firstGpsTime = false;

@@ -248,7 +248,9 @@ psramLock();
     {
         for (int o = 0; o < (PKGLISTSIZE - (i + 1)); o++)
         {
-            if ((a[o].shown ? a[o].shown : a[o].time) > (a[o + 1].shown ? a[o + 1].shown : a[o + 1].time)) // SM0TGY 2.30: list in send/receive order
+            // SM0TGY 2.33: order by uptime (the clock can be set back and forth); empty slots last-first as before
+            uint64_t ka = a[o].time ? (uint64_t)a[o].ms + 1 : 0, kb = a[o + 1].time ? (uint64_t)a[o + 1].ms + 1 : 0;
+            if (ka > kb)
             {
                 ptr2 = (char *)&a[o];
                 ptr3 = (char *)&a[o + 1];
@@ -335,6 +337,7 @@ int pkgMsgUpdate(const char *call, const char *raw, uint16_t msg_id, int8_t ack,
 
     msgQueue[i].time = time(NULL);
     msgQueue[i].shown = msgQueue[i].time; // SM0TGY 2.30
+    msgQueue[i].ms = millis(); // SM0TGY 2.33
     msgQueue[i].msgID = msg_id;
     msgQueue[i].idStr[0] = 0; // SM0TGY 2.28
     msgQueue[i].ack = ack;

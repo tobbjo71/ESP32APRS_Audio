@@ -45,7 +45,10 @@ var PG={heard:'/heard',map:'/radar',pkt:'/pkt',msg:'/msg',more:'/more'},ST=null;
 function navOn(p){document.querySelectorAll('.bnav button').forEach(function(b){b.classList.toggle('on',b.dataset.p==p)})}
 function stopPage(){window.onStatus=null;if(window.pageStop){try{window.pageStop()}catch(e){}window.pageStop=null}}
 function go(p){stopPage();navOn(p);document.getElementById('back').hidden=true;$('#contentmain').load(PG[p]);window.scrollTo(0,0)}
-function setting(u,t){stopPage();navOn('more');document.getElementById('back').hidden=false;document.getElementById('backT').textContent=t;$('#contentmain').load(u);window.scrollTo(0,0)}
+function setting(u,t){stopPage();navOn('more');document.getElementById('back').hidden=false;document.getElementById('backT').textContent=t;$('#contentmain').load(u,function(){if(u=='/mod')hwSimple()});window.scrollTo(0,0)}
+function hwSimple(){var re=/UART0|UART2|1-Wire|I2C|Counter|MODBUS|External TNC|AT-COMMAND|PPP/,n=0;$('#contentmain table').each(function(){var th=$(this).find('th').first().text();if(re.test(th)){var f=$(this).closest('form');(f.length?f:$(this)).addClass('hwadv').hide();n++}});
+if(n)$('#contentmain').append('<p><button type="button" class="button" onclick="$(\'.hwadv\').toggle()">Show/hide '+n+' settings not used on this board</button></p>')}
+window.bcn=function(el){el.disabled=true;var t0=el.textContent;fetch('/beacon',{method:'POST'}).then(function(r){return r.json()}).then(function(j){el.textContent=j.ok?'Beacon queued':(j.t||'Not sent')}).catch(function(){el.textContent='No answer'}).then(function(){setTimeout(function(){el.textContent=t0;el.disabled=false},4000)})};
 function selectTab(e,n){var m={DashBoard:'heard',RX:'pkt',MSG:'msg'};go(m[n]||'more')}
 function ago(s){if(s<60)return s+' s';if(s<3600)return Math.round(s/60)+' min';return Math.round(s/3600)+' h'}
 function fup(u){var d=Math.floor(u/86400),h=Math.floor(u%86400/3600),m=Math.floor(u%3600/60);return(d?d+' d ':'')+h+' h '+m+' min'}
@@ -73,12 +76,13 @@ function symSet(sel,c,t){symClose();if(sel===null)setValue(c,t);else setValue(se
 if(window.EventSource){var es=new EventSource('/eventMsg');es.addEventListener('chatMsg',function(e){var m=document.getElementById('chatMsg');if(m)m.innerHTML=e.data},false)}
 $(document).on('submit','#contentmain form',function(e){if(!e.isDefaultPrevented()){e.preventDefault();alert('This page could not save: its script did not start. Please report the page name.')}});
 $.ajaxPrefilter(function(o){if(o.url!='/update'&&!o.timeout)o.timeout=20000});$(document).ajaxComplete(function(){$('#contentmain button:disabled,#contentmain input[type=submit]:disabled').prop('disabled',false)});
-st();setInterval(st,5000);var DL={'#system':['/system','System and status'],'#radiotest':['/tnc2','Radio level and TX test']}[location.hash];if(DL){history.replaceState(null,'','/');setting(DL[0],DL[1])}else go('heard');
+st();setInterval(st,5000);var DL={'#system':['/system','System and status'],'#radiotest':['/tnc2','Radio setup']}[location.hash];if(DL){history.replaceState(null,'','/');setting(DL[0],DL[1])}else go('heard');
 </script>
 </body></html>
 )HTML";
 
 static const char UI_HEARD[] PROGMEM = R"HTML(<h2 class="pg">Heard stations <span id="hc"></span></h2>
+<p style="margin:0 0 10px"><button type="button" class="button" onclick="bcn(this)">Send beacon now</button></p>
 <div id="hl"><p class="muted">Loading&hellip;</p></div>
 <script>(function(){
 var CMP=['N','NE','E','SE','S','SW','W','NW'];
@@ -148,11 +152,13 @@ window.pageStop=function(){stopped=true;try{if(ws)ws.close()}catch(e){}};
 
 #define ROW(url, title, id) "<a href=\"#\" onclick=\"setting('" url "','" title "');return false\">" title "<span id=\"" id "\"></span>" CHEV "</a>\n"
 static const char UI_MORE[] PROGMEM = "<h2 class=\"pg\">Settings</h2>\n"
-	"<div class=\"gh\">Operation</div><div class=\"grp\">\n"
+	"<div class=\"gh\">Station</div><div class=\"grp\">\n"
 	ROW("/tracker", "Tracker", "m_trk")
-	ROW("/radio", "Radio", "m_radio")
-	ROW("/tnc2", "Radio level and TX test", "m_rt")
 	ROW("/gnss", "GNSS", "m_gnss")
+	"</div><div class=\"gh\">Radio</div><div class=\"grp\">\n"
+	ROW("/tnc2", "Radio setup", "m_rt")
+	ROW("/radio", "Modem", "m_radio")
+	"</div><div class=\"gh\">APRS functions</div><div class=\"grp\">\n"
 	ROW("/digi", "Digipeater", "m_digi")
 	ROW("/igate", "IGate", "m_igate")
 	ROW("/igate?part=filter", "IGate filter", "m_flt")
@@ -288,6 +294,16 @@ void uiForkRoutes(AsyncWebServer &srv)
 {
 	srv.on("/status.json", HTTP_GET, handle_status_json);
 	srv.on("/heard.json", HTTP_GET, handle_heard_json);
+	// SM0TGY 2.33: send the tracker position now (Heard and Radio setup pages)
+	srv.on("/beacon", HTTP_POST, [](AsyncWebServerRequest *r) {
+		if (!uiAuth(r))
+			return;
+		extern bool forkBeaconNow();
+		if (forkBeaconNow())
+			r->send(200, "application/json", "{\"ok\":1}");
+		else
+			r->send(200, "application/json", "{\"ok\":0,\"t\":\"Tracker is off\"}");
+	});
 	srv.on("/pkt.json", HTTP_GET, [](AsyncWebServerRequest *r) {
 		if (!uiAuth(r))
 			return;
