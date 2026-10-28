@@ -335,6 +335,7 @@ int pkgMsgUpdate(const char *call, const char *raw, uint16_t msg_id, int8_t ack,
 
     msgQueue[i].time = time(NULL);
     msgQueue[i].msgID = msg_id;
+    msgQueue[i].idStr[0] = 0; // SM0TGY 2.28
     msgQueue[i].ack = ack;
     msgQueue[i].rxtx = rxtx;
 
@@ -595,7 +596,26 @@ void handleIncomingAPRS(const String &line)
                     decrypted.trim();
                     if (decrypted == "")
                         return;
-                    pkgMsgUpdate(fromCall.c_str(), decrypted.c_str(), msgNo.toInt(), -1, true); // RX Message
+                    // SM0TGY 2.28: IDs may contain letters ("MV", reply-ack "MV}"); toInt() made them all 0,
+                    // so a second such message replaced the first. Numeric IDs keep their value, others get
+                    // a hash above 0x8000; the text is kept for display.
+                    String idTxt = msgNo;
+                    int rb = idTxt.indexOf('}');
+                    if (rb >= 0)
+                        idTxt = idTxt.substring(0, rb);
+                    uint16_t idNum = 0;
+                    if (idTxt.length() && isdigit((unsigned char)idTxt[0]))
+                        idNum = (uint16_t)idTxt.toInt();
+                    else
+                    {
+                        uint16_t h = 0;
+                        for (size_t k = 0; k < idTxt.length(); k++)
+                            h = (uint16_t)(h * 31 + (uint8_t)idTxt[k]);
+                        idNum = 0x8000 | (h & 0x7FFF);
+                    }
+                    int qi = pkgMsgUpdate(fromCall.c_str(), decrypted.c_str(), idNum, -1, true); // RX Message
+                    if (qi >= 0)
+                        strlcpy(msgQueue[qi].idStr, idTxt.c_str(), sizeof(msgQueue[qi].idStr));
                     sendAPRSAck(fromCall, msgNo);
                     if (config.at_cmd_msg)
                     {

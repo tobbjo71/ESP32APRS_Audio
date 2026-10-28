@@ -16,6 +16,7 @@ typedef struct
     bool rxtx; // true=rx,false=tx
 	uint8_t type;
 	uint16_t msgID;
+	char idStr[8]; // SM0TGY 2.28: received ID as text (APRS IDs may be letters, e.g. "MV")
 	char callsign[10];
 	size_t length;
 	char *text;	

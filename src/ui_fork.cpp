@@ -140,7 +140,7 @@ var ws=null;function boot(){L.length=0;fetch('/pkt.json').then(function(r){retur
 function live(){if(stopped)return;ws=new WebSocket('ws://'+location.hostname+':81/ws');ws.onclose=function(){if(!stopped)setTimeout(boot,3000)};
 ws.onmessage=function(e){var j;try{j=JSON.parse(e.data)}catch(x){return}if(parseInt(j.Active)!=1)return;var d=j.Dir=='TX'?'TX':'RX',db=null;
 if(d=='RX'){db=20*Math.log10(parseFloat(j.mVrms)/1000);if(!isFinite(db))db=null;else lv(db)}
-var raw='';try{raw=atob(j.RAW)}catch(x){}var t=new Date(Number(j.timeStamp)*1000),ts=t.getFullYear()<2020?'--:--':('0'+t.getHours()).slice(-2)+':'+('0'+t.getMinutes()).slice(-2)+':'+('0'+t.getSeconds()).slice(-2);
+var raw='';try{raw=atob(j.RAW);raw=decodeURIComponent(escape(raw))}catch(x){}var t=new Date(Number(j.timeStamp)*1000),ts=t.getFullYear()<2020?'--:--':('0'+t.getHours()).slice(-2)+':'+('0'+t.getMinutes()).slice(-2)+':'+('0'+t.getSeconds()).slice(-2);
 L.unshift({d:d,t:ts,db:db,r:raw});if(L.length>200)L.pop();draw()}}
 window.pageStop=function(){stopped=true;try{if(ws)ws.close()}catch(e){}};
 })();</script>

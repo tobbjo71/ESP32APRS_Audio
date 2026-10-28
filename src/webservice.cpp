@@ -1604,7 +1604,10 @@ String event_chatMessage(bool gethtml)
 				strcat(html, "<td>Fail</td>"); // SM0TGY 2.27: was "TF"
 			}
 
-			snprintf(temp_buffer, sizeof(temp_buffer), "<td>%d</td></tr>\n", pkg.msgID);
+			if (pkg.idStr[0]) // SM0TGY 2.28: received IDs with letters
+				snprintf(temp_buffer, sizeof(temp_buffer), "<td>%s</td></tr>\n", pkg.idStr);
+			else
+				snprintf(temp_buffer, sizeof(temp_buffer), "<td>%d</td></tr>\n", pkg.msgID);
 			strcat(html, temp_buffer);
 		}
 	}
@@ -11516,6 +11519,21 @@ char *pktLogJson(const char *call)
 					js[o++] = '\\';
 					js[o++] = ch;
 				}
+				else if (ch >= 0xC2 && ch <= 0xF4)
+				{
+					// SM0TGY 2.28: pass a valid UTF-8 sequence through (was one \u00xx per byte: "uppfÃ¶lning")
+					int n = ch >= 0xF0 ? 3 : (ch >= 0xE0 ? 2 : 1), m = 0;
+					while (m < n && ((unsigned char)c[m + 1] & 0xC0) == 0x80)
+						m++;
+					if (m == n)
+					{
+						for (int q = 0; q <= n; q++)
+							js[o++] = c[q];
+						c += n;
+					}
+					else
+						o += snprintf(js + o, cap - o, "\\u%04x", ch);
+				}
 				else if (ch < 32 || ch > 126)
 					o += snprintf(js + o, cap - o, "\\u%04x", ch);
 				else
@@ -11887,7 +11905,7 @@ window.rnow=function(){fetch('/rxcap?now=1').then(function(){setTimeout(function
 function tq(){if(stopped)return;fetch('/txtest').then(function(r){return r.json()}).then(ts).catch(function(){}).then(function(){if(!stopped)t2=setTimeout(tq,2000)})}
 function live(){if(stopped)return;ws=new WebSocket('ws://'+location.hostname+':81/ws');ws.onclose=function(){if(!stopped)setTimeout(live,3000)};
 ws.onmessage=function(e){var j;try{j=JSON.parse(e.data)}catch(x){return}if(parseInt(j.Active)!=1||j.Dir=='TX')return;var v=parseFloat(j.mVrms)/1000,d=20*Math.log10(v);
-E('pk').textContent=isFinite(d)?(v.toFixed(3)+' Vrms · '+d.toFixed(1)+' dBV'):'–';try{E('pr').textContent=atob(j.RAW)}catch(x){}}}
+E('pk').textContent=isFinite(d)?(v.toFixed(3)+' Vrms · '+d.toFixed(1)+' dBV'):'–';try{var a=atob(j.RAW);try{a=decodeURIComponent(escape(a))}catch(y){}E('pr').textContent=a}catch(x){}}}
 window.pageStop=function(){stopped=true;clearTimeout(t1);clearTimeout(t2);clearTimeout(t3);clearTimeout(t4);try{if(ws)ws.close()}catch(e){}if(TT)fetch('/txtest?m=0')};
 lv();tq();rl();rc();live()})();</script>
 )HTML";
