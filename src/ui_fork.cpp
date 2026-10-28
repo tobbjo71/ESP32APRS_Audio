@@ -72,7 +72,7 @@ o.querySelector('.symbox').innerHTML='<div class="symhd"><b class="mono">'+c.rep
 function symSet(sel,c,t){symClose();if(sel===null)setValue(c,t);else setValue(sel,c,t)}
 if(window.EventSource){var es=new EventSource('/eventMsg');es.addEventListener('chatMsg',function(e){var m=document.getElementById('chatMsg');if(m)m.innerHTML=e.data},false)}
 $(document).on('submit','#contentmain form',function(e){if(!e.isDefaultPrevented()){e.preventDefault();alert('This page could not save: its script did not start. Please report the page name.')}});
-$.ajaxPrefilter(function(o){if(o.url!='/update'&&!o.timeout)o.timeout=20000});$(document).ajaxComplete(function(){$('#contentmain button:disabled').prop('disabled',false)});
+$.ajaxPrefilter(function(o){if(o.url!='/update'&&!o.timeout)o.timeout=20000});$(document).ajaxComplete(function(){$('#contentmain button:disabled,#contentmain input[type=submit]:disabled').prop('disabled',false)});
 st();setInterval(st,5000);var DL={'#system':['/system','System and status'],'#radiotest':['/tnc2','Radio level and TX test']}[location.hash];if(DL){history.replaceState(null,'','/');setting(DL[0],DL[1])}else go('heard');
 </script>
 </body></html>

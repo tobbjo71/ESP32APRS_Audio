@@ -3499,6 +3499,9 @@ void handle_msg(AsyncWebServerRequest *request)
 		strcat(html, "if(e.currentTarget.id===\"formMSG\") alert(\"Submited Successfully\");\n");
 		strcat(html, "if(e.currentTarget.id===\"formChat\"){var m=document.getElementById(\"msg\");if(m)m.value='';}\n");
 		strcat(html, "},\n");
+		strcat(html, "complete: function () {\n");
+		strcat(html, "if(e.currentTarget.id===\"formChat\"){var b=document.getElementById(\"submitChat\");if(b)b.disabled=false;}\n"); // SM0TGY 2.32: Send is an input, the shell only re-enables buttons
+		strcat(html, "},\n");
 		strcat(html, "error: function (data) {\n");
 		strcat(html, "if(e.currentTarget.id===\"formMSG\") alert(\"An error occurred.\");\n");
 		strcat(html, "}\n");
