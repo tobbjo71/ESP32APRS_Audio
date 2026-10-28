@@ -5629,7 +5629,7 @@ static void taskHeartbeat(void *)
         if (hbNet == 0) // network task not running yet: leave Wi-Fi alone
             Serial.println(" | net not started");
         else
-            Serial.printf(" | sta %d ip %s ap %d\n", (int)WiFi.status(), WiFi.localIP().toString().c_str(), (int)WiFi.softAPgetStationNum());
+            Serial.printf(" | sta %d ip %s rssi %d ch %d ps %d ap %d\n", (int)WiFi.status(), WiFi.localIP().toString().c_str(), (int)WiFi.RSSI(), (int)WiFi.channel(), (int)WiFi.getSleep(), (int)WiFi.softAPgetStationNum());
         hbCpuLine(); // SM0TGY 2.18
     }
 }
@@ -8904,6 +8904,10 @@ void taskNetwork(void *pvParameters)
     // soft-AP channel and the own AP disappears for clients (seen 2026-10-22 on 2.1).
     // taskNetwork reconnects at intervals instead (first try 3 s after the link is lost).
     WiFi.setAutoReconnect(false);
+    // SM0TGY 2.19: no Wi-Fi modem sleep. Arduino's default (WIFI_PS_MIN_MODEM) applies in
+    // station-only mode; with the own AP off (2026-10-28) the board fell out of the router's
+    // client list while it still reported itself connected. Ignored by ESP-IDF while BT is on.
+    WiFi.setSleep(false);
 
     // WiFi.onEvent(Wifi_connected,SYSTEM_EVENT_STA_CONNECTED);
     // WiFi.onEvent(Get_IPAddress, SYSTEM_EVENT_STA_GOT_IP);
