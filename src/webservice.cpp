@@ -1548,7 +1548,7 @@ String event_chatMessage(bool gethtml)
 
 			pkg.callsign[10] = 0;
 			// time_t tm = pkg.time;
-			localtime_r(&pkg.time, &tmstruct);
+			localtime_r(pkg.shown ? &pkg.shown : &pkg.time, &tmstruct); // SM0TGY 2.30: send/receive time, not the next retry time
 			char strTime[10];
 			// sprintf(strTime, "%02d:%02d:%02d", tmstruct.tm_hour, tmstruct.tm_min, tmstruct.tm_sec);
 			if (tmNow.tm_mday == tmstruct.tm_mday)
@@ -3347,7 +3347,16 @@ void handle_msg(AsyncWebServerRequest *request)
 			}
 		}
 		log_d("Chat to %s | msg %s", toCall, msg);
-		sendAPRSMessage(String(toCall), String(msg), config.msg_encrypt);
+		// SM0TGY 2.30: the same message to the same station within 10 s is a repeated submit
+		// (seen 2026-10-28: one Send became messages 1, 2 and 3 in the same second)
+		static char lastTo[10] = "", lastMsg[256] = "";
+		static unsigned long lastMs = 0;
+		bool dup = strcmp(lastTo, toCall) == 0 && strcmp(lastMsg, msg) == 0 && millis() - lastMs < 10000;
+		strlcpy(lastTo, toCall, sizeof(lastTo));
+		strlcpy(lastMsg, msg, sizeof(lastMsg));
+		lastMs = millis();
+		if (!dup && toCall[0] && msg[0])
+			sendAPRSMessage(String(toCall), String(msg), config.msg_encrypt);
 		// Using dynamic memory allocation instead of String
 		char *html = allocateStringMemory(64); // Small buffer for "Send completed"
 		if (html)
@@ -3472,10 +3481,11 @@ void handle_msg(AsyncWebServerRequest *request)
 		}
 
 		strcpy(html, "<script type=\"text/javascript\">\n");
-		strcat(html, "$('form').submit(function (e) {\n");
+		strcat(html, "$('form').off('submit').submit(function (e) {\n"); // SM0TGY 2.30: one handler per form
 		strcat(html, "e.preventDefault();\n");
 		strcat(html, "var data = new FormData(e.currentTarget);\n");
 		strcat(html, "if(e.currentTarget.id===\"formMSG\") document.getElementById(\"submitMSG\").disabled=true;\n");
+		strcat(html, "if(e.currentTarget.id===\"formChat\"){var sb=document.getElementById(\"submitChat\");if(sb.disabled)return;sb.disabled=true;}\n");
 		// strcat(html, "if(e.currentTarget.id===\"formChat\") document.getElementById(\"submitI2C0\").disabled=true;\n");
 		strcat(html, "$.ajax({\n");
 		strcat(html, "url: '/msg',\n");
@@ -3485,6 +3495,7 @@ void handle_msg(AsyncWebServerRequest *request)
 		strcat(html, "processData: false,\n");
 		strcat(html, "success: function (data) {\n");
 		strcat(html, "if(e.currentTarget.id===\"formMSG\") alert(\"Submited Successfully\");\n");
+		strcat(html, "if(e.currentTarget.id===\"formChat\"){var m=document.getElementById(\"msg\");if(m)m.value='';}\n");
 		strcat(html, "},\n");
 		strcat(html, "error: function (data) {\n");
 		strcat(html, "if(e.currentTarget.id===\"formMSG\") alert(\"An error occurred.\");\n");

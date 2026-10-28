@@ -16,6 +16,7 @@ typedef struct
     bool rxtx; // true=rx,false=tx
 	uint8_t type;
 	uint16_t msgID;
+	time_t shown; // SM0TGY 2.30: when sent/received (time is the next retry time for queued messages)
 	char idStr[8]; // SM0TGY 2.28: received ID as text (APRS IDs may be letters, e.g. "MV")
 	char callsign[10];
 	size_t length;
