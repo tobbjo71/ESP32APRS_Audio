@@ -5573,6 +5573,38 @@ extern volatile bool hw_afsk_dac_isr;
 #if FORK_AUDIO_DMA
 extern volatile uint32_t afskTxDmaRuns, afskTxDmaErr;
 #endif
+// SM0TGY 2.18: CPU share per task over the last 5 s (FreeRTOS run-time stats, esp_timer us).
+// Interrupt time is counted in the task that was interrupted. IDLE0/IDLE1 = free time per core.
+static void hbCpuLine()
+{
+    static TaskStatus_t prev[40], cur[40];
+    static UBaseType_t nPrev = 0;
+    static uint32_t prevTotal = 0;
+    uint32_t total = 0;
+    UBaseType_t n = uxTaskGetSystemState(cur, 40, &total);
+    uint32_t dt = total - prevTotal;
+    if (nPrev && dt)
+    {
+        Serial.print("CPU");
+        for (UBaseType_t i = 0; i < n; i++)
+        {
+            uint32_t was = 0;
+            for (UBaseType_t k = 0; k < nPrev; k++)
+                if (prev[k].xHandle == cur[i].xHandle)
+                {
+                    was = prev[k].ulRunTimeCounter;
+                    break;
+                }
+            uint32_t pc = (uint32_t)((uint64_t)(cur[i].ulRunTimeCounter - was) * 100 / dt); // % of one core
+            if (pc >= 2)
+                Serial.printf(" %s %lu%%", cur[i].pcTaskName, (unsigned long)pc);
+        }
+        Serial.println();
+    }
+    memcpy(prev, cur, sizeof(TaskStatus_t) * n);
+    nPrev = n;
+    prevTotal = total;
+}
 static void taskHeartbeat(void *)
 {
     uint32_t lastAdc = adcIsrCount, lastT = millis();
@@ -5598,6 +5630,7 @@ static void taskHeartbeat(void *)
             Serial.println(" | net not started");
         else
             Serial.printf(" | sta %d ip %s ap %d\n", (int)WiFi.status(), WiFi.localIP().toString().c_str(), (int)WiFi.softAPgetStationNum());
+        hbCpuLine(); // SM0TGY 2.18
     }
 }
 void loop()
