@@ -3145,7 +3145,15 @@ bool pkgTxSend()
                     status.txCount++;
                     log_d("TX->RF[%i]: %s\n", txQueue[i].length, txQueue[i].Info);
                     APRS_setPreamble(config.preamble * 100); // Send packet to RF
-                    APRS_sendTNC2Pkt((uint8_t *)txQueue[i].Info, txQueue[i].length);
+                    {
+                        // SM0TGY 2.24: ax25_encode() rewrites the text it gets (path moved to the
+                        // start, strtok). Encode a copy, so the Packets page and BLE get the packet.
+                        static char txTmp[sizeof(txQueue[0].Info) + 1];
+                        size_t n = txQueue[i].length < sizeof(txTmp) - 1 ? txQueue[i].length : sizeof(txTmp) - 1;
+                        memcpy(txTmp, txQueue[i].Info, n);
+                        txTmp[n] = 0;
+                        APRS_sendTNC2Pkt((uint8_t *)txTmp, n);
+                    }
                     igateTLM.TX++;
 #ifdef BLUETOOTH
                     btSendOwnTx(txQueue[i].Info, txQueue[i].length);
